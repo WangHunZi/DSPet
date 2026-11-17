@@ -1,0 +1,22 @@
+{
+  "width": 240,
+  "height": 240,
+  "fps": 6,
+  "frame_count": 60,
+  "bytes_per_frame": 115200,
+  "format": "RGB565_BE",
+  "crop": [
+    193,
+    56,
+    439,
+    334
+  ],
+  "margin": 10,
+  "background": [
+    237,
+    246,
+    252
+  ],
+  "source_sha256": "deb965d05a85dacf5ff4a20faa757846f0d11679598c3ec578a5571487660395",
+  "sha256": "b5c107e15b02366dbddfdef078622cc6e2b93711fc63d8c000c4bd010c1088f8"
+}
