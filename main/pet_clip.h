@@ -10,4 +10,5 @@ typedef struct {
     const uint32_t *offsets; // frame_count + 1 entries; last is the total size
     unsigned frame_count;
     unsigned fps;
+    unsigned keyframe_interval;
 } pet_clip_t;

@@ -1,8 +1,8 @@
 menu "DSPet display"
     config DSPET_LCD_SPI_MHZ
         int "LCD SPI clock (MHz)"
-        range 1 20
-        default 10
+        range 1 40
+        default 40
     config DSPET_LCD_SPI_MODE
         int "LCD SPI mode (0 or 3)"
         range 0 3

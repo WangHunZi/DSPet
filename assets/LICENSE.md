@@ -12,6 +12,7 @@ Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
 署名：PC2005-cloud/dsh-pet（动画）；上善无形（原型「溟月」）；
 ZipZipPipe（DeepSeek 版女仆鲸鱼娘设计）。
 
-DSPet 的修改：统一裁剪与缩放，透明背景合成浅蓝色，降低帧率，转换为 RGB565。
+DSPet 的修改：统一裁剪与缩放，透明背景合成浅蓝色，24 fps，
+量化为共用 128 色调色板，转换为差分压缩帧及 RGB565 输出。
 衍生素材按 CC BY-NC-SA 4.0 共享，非官方、非商业自制用途。
 上游代码的 MIT 许可证不替代角色素材的 CC BY-NC-SA 4.0 条件。

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert pinned clips to independently zlib-compressed RGB565 frames.
+"""Convert pinned clips to independently compressed indexed-color frames.
 
 VP9 decoding happens only on the host; ESP32 uses its ROM zlib inflater.
 Run: python3 tools/convert_animation.py
@@ -7,6 +7,7 @@ Requires ffmpeg with libvpx-vp9 and tools/requirements.txt.
 """
 
 import hashlib
+import math
 import json
 from pathlib import Path
 import subprocess
@@ -18,7 +19,9 @@ from PIL import Image, ImageChops, ImageOps
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "assets/generated"
 WIDTH, HEIGHT = 240, 240
-FPS = 6
+FPS = 24
+KEYFRAME_INTERVAL = 24
+PALETTE_COLORS = 128
 MARGIN = 10
 BACKGROUND = (237, 246, 252)
 
@@ -29,6 +32,34 @@ def rgb565_be(image):
         value = ((red >> 3) << 11) | ((green >> 2) << 5) | (blue >> 3)
         data.extend((value >> 8, value & 255))
     return data
+
+
+def decode_indexed(payload):
+    """Reference host decoder: 256 RGB565 colors followed by 8-bit indices."""
+    if len(payload) != 512 + WIDTH * HEIGHT:
+        raise ValueError("Invalid indexed frame length")
+    palette, indices = payload[:512], payload[512:]
+    return b"".join(palette[index * 2:index * 2 + 2] for index in indices)
+
+
+def restore_delta(payload, previous, keyframe):
+    if len(payload) != 512 + WIDTH * HEIGHT:
+        raise ValueError("Invalid delta payload length")
+    indices = payload[512:]
+    if not keyframe:
+        if previous is None or len(previous) != len(indices):
+            raise ValueError("Delta frame needs its predecessor")
+        indices = bytes(a ^ b for a, b in zip(indices, previous))
+    return payload[:512] + indices, indices
+
+
+def compose(path, crop):
+    with Image.open(path) as source:
+        sprite = ImageOps.contain(source.crop(crop),
+            (WIDTH - 2 * MARGIN, HEIGHT - 2 * MARGIN), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGBA", (WIDTH, HEIGHT), BACKGROUND + (255,))
+    canvas.alpha_composite(sprite, ((WIDTH - sprite.width) // 2, (HEIGHT - sprite.height) // 2))
+    return canvas.convert("RGB")
 
 
 def convert(source_path):
@@ -67,30 +98,47 @@ def convert(source_path):
         crop = (max(0, crop[0] - 3), max(0, crop[1] - 3),
                 min(union.width, crop[2] + 3), min(union.height, crop[3] + 3))
 
+        # A shared palette keeps indices stable across adjacent frames. This
+        # permits XOR deltas and prevents palette colors flickering each frame.
+        sample_paths = paths[::max(1, len(paths) // 30)][:30]
+        sheet = Image.new("RGB", (WIDTH * 5, HEIGHT * math.ceil(len(sample_paths) / 5)), BACKGROUND)
+        for i, path in enumerate(sample_paths):
+            sheet.paste(compose(path, crop), ((i % 5) * WIDTH, (i // 5) * HEIGHT))
+        shared_palette = sheet.quantize(colors=PALETTE_COLORS, method=Image.Quantize.MEDIANCUT,
+                                        dither=Image.Dither.NONE)
+        colors = shared_palette.getpalette()
+        colors += list(BACKGROUND) * ((768 - len(colors)) // 3)
+        shared_palette.putpalette(colors)
+        palette_rgb = Image.frombytes("RGB", (256, 1), bytes(shared_palette.getpalette()))
+        palette_bytes = rgb565_be(palette_rgb)
+
         preview_frames = []
         binary = OUTPUT / f"{name}.rgb565z"
         offsets = [0]
         uncompressed_hash = hashlib.sha256()
+        previous = None
         with binary.open("wb") as output:
-            for path in paths:
-                with Image.open(path) as source:
-                    sprite = ImageOps.contain(source.crop(crop),
-                        (WIDTH - 2 * MARGIN, HEIGHT - 2 * MARGIN), Image.Resampling.LANCZOS)
-                canvas = Image.new("RGBA", (WIDTH, HEIGHT), BACKGROUND + (255,))
-                canvas.alpha_composite(sprite,
-                    ((WIDTH - sprite.width) // 2, (HEIGHT - sprite.height) // 2))
-                frame = canvas.convert("RGB")
-                pixels = rgb565_be(frame)
+            for number, path in enumerate(paths):
+                indexed = compose(path, crop).quantize(palette=shared_palette, dither=Image.Dither.NONE)
+                indices = indexed.tobytes()
+                payload = palette_bytes + indices
+                pixels = decode_indexed(payload)
                 uncompressed_hash.update(pixels)
-                compressed = zlib.compress(pixels, level=9)
+                if number % KEYFRAME_INTERVAL:
+                    payload = palette_bytes + bytes(a ^ b for a, b in zip(indices, previous))
+                previous = indices
+                compressed = zlib.compress(payload, level=9)
                 output.write(compressed)
                 offsets.append(offsets[-1] + len(compressed))
-                preview_frames.append(frame)
+                preview_frames.append(indexed.convert("RGB"))
 
         metadata = {
             "width": WIDTH, "height": HEIGHT, "fps": FPS,
             "frame_count": len(paths), "bytes_per_frame": WIDTH * HEIGHT * 2,
-            "format": "RGB565_BE_ZLIB", "crop": crop, "margin": MARGIN,
+            "format": "INDEX8_DELTA_RGB565_ZLIB", "decoded_bytes_per_frame": 512 + WIDTH * HEIGHT,
+            "keyframe_interval": KEYFRAME_INTERVAL,
+            "palette_colors": PALETTE_COLORS,
+            "crop": crop, "margin": MARGIN,
             "offsets": offsets, "uncompressed_sha256": uncompressed_hash.hexdigest(),
             "background": list(BACKGROUND), "source_sha256": source_hash,
             "sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),

@@ -7,16 +7,19 @@ foreach(name IN LISTS clip_names)
     set(manifest "${asset_dir}/${name}.json")
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${manifest}")
     file(READ "${manifest}" asset_json)
-    foreach(field width height fps frame_count bytes_per_frame format sha256)
+    foreach(field width height fps frame_count bytes_per_frame decoded_bytes_per_frame keyframe_interval format sha256)
         string(JSON asset_${field} GET "${asset_json}" ${field})
     endforeach()
     set(binary "${asset_dir}/${name}.rgb565z")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${binary}")
     file(SIZE "${binary}" actual_bytes)
     file(SHA256 "${binary}" actual_sha256)
-    if(NOT asset_format STREQUAL "RGB565_BE_ZLIB" OR
+    if(NOT asset_format STREQUAL "INDEX8_DELTA_RGB565_ZLIB" OR
        NOT asset_width EQUAL 240 OR NOT asset_height EQUAL 240 OR
        NOT asset_frame_count GREATER 0 OR NOT asset_fps GREATER 0 OR asset_fps GREATER 60 OR
-       NOT asset_bytes_per_frame EQUAL 115200 OR NOT actual_sha256 STREQUAL asset_sha256)
+       NOT asset_bytes_per_frame EQUAL 115200 OR NOT asset_decoded_bytes_per_frame EQUAL 58112 OR
+       NOT asset_keyframe_interval GREATER 0 OR asset_keyframe_interval GREATER asset_frame_count OR
+       NOT actual_sha256 STREQUAL asset_sha256)
         message(FATAL_ERROR "Invalid ${name} pack; run tools/convert_animation.py")
     endif()
     string(JSON offset_count LENGTH "${asset_json}" offsets)
@@ -43,10 +46,10 @@ foreach(name IN LISTS clip_names)
         "extern const uint8_t ${name}_end[] asm(\"_binary_${name}_rgb565z_end\");\n"
         "static const uint32_t ${name}_offsets[] = {${offsets}};\n")
     string(APPEND records
-        "    {\"${name}\", ${name}_start, ${name}_end, ${name}_offsets, ${asset_frame_count}, ${asset_fps}},\n")
+        "    {\"${name}\", ${name}_start, ${name}_end, ${name}_offsets, ${asset_frame_count}, ${asset_fps}, ${asset_keyframe_interval}},\n")
     list(APPEND binaries "${binary}")
 endforeach()
-idf_component_register(SRCS "app_main.c" "display.c" "pet_animation.c" "button.c" "button_filter.c"
+idf_component_register(SRCS "app_main.c" "display.c" "pet_animation.c" "button.c" "button_filter.c" "indexed_frame.c"
     INCLUDE_DIRS "." "${CMAKE_CURRENT_BINARY_DIR}"
     REQUIRES esp_lcd esp_driver_gpio esp_driver_spi esp_timer esp_rom
     EMBED_FILES ${binaries})
