@@ -1,4 +1,5 @@
 #include "display.h"
+#include "button.h"
 #include "pet_animation.h"
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
@@ -14,5 +15,6 @@ void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 #endif
-    pet_play_idle();
+    button_start();
+    pet_play();
 }

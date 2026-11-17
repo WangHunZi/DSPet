@@ -1,6 +1,7 @@
 #include "pet_animation.h"
 #include "asset_config.h"
 #include "display.h"
+#include "button.h"
 #include <assert.h>
 #include <inttypes.h>
 #include <stdlib.h>
@@ -11,12 +12,15 @@
 #include "freertos/task.h"
 #include "miniz.h"
 
-void pet_play_idle(void)
+void pet_play(void)
 {
     static const char *TAG = "pet";
     const pet_clip_t *clip = &pet_clips[0];
     size_t size = (uintptr_t)clip->end - (uintptr_t)clip->start;
-    assert(size == clip->offsets[clip->frame_count]);
+    for (size_t i = 0; i < PET_CLIP_COUNT; ++i) {
+        size_t bytes = (uintptr_t)pet_clips[i].end - (uintptr_t)pet_clips[i].start;
+        assert(bytes == pet_clips[i].offsets[pet_clips[i].frame_count]);
+    }
     uint8_t *decoded = heap_caps_malloc(DISPLAY_FRAME_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     // ROM convenience inflater allocates this large state on the stack;
     // keep it on the heap to fit app_main's normal task stack.
@@ -27,10 +31,20 @@ void pet_play_idle(void)
     ESP_LOGI(TAG, "Free internal heap after decoder init: %u bytes",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
-    const int64_t epoch = esp_timer_get_time();
+    ESP_LOGI(TAG, "BOOT switches idle -> wave -> sleep; %u clips", (unsigned)PET_CLIP_COUNT);
+    int64_t epoch = esp_timer_get_time();
     int64_t last_log = epoch;
     unsigned sent = 0;
     for (;;) {
+        uint32_t presses;
+        if (button_take_count(&presses)) {
+            clip = &pet_clips[presses % PET_CLIP_COUNT];
+            size = (uintptr_t)clip->end - (uintptr_t)clip->start;
+            epoch = esp_timer_get_time();
+            last_log = epoch;
+            sent = 0;
+            ESP_LOGI(TAG, "Action: %s (BOOT presses=%" PRIu32 ")", clip->name, presses);
+        }
         int64_t elapsed = esp_timer_get_time() - epoch;
         uint64_t sequence = (uint64_t)elapsed * clip->fps / 1000000;
         size_t index = sequence % clip->frame_count;
