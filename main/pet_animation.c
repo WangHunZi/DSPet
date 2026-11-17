@@ -3,6 +3,8 @@
 #include "display.h"
 #include "button.h"
 #include "indexed_frame.h"
+#include "action_state.h"
+#include "sdkconfig.h"
 #include <assert.h>
 #include <inttypes.h>
 #include <stdlib.h>
@@ -35,16 +37,25 @@ void pet_play(void)
 
     ESP_LOGI(TAG, "BOOT switches through %u clips", (unsigned)PET_CLIP_COUNT);
     int64_t epoch = esp_timer_get_time();
+    action_state_t action = {.started_us = epoch};
+    uint32_t presses = 0;
+#ifdef CONFIG_DSPET_AUTO_PLAY
+    const bool automatic = true;
+#else
+    const bool automatic = false;
+#endif
     int64_t last_log = epoch;
     unsigned sent = 0;
     int64_t decode_total = 0, transfer_total = 0;
     size_t last_decoded = SIZE_MAX;
     for (;;) {
-        uint32_t presses;
-        if (button_take_count(&presses)) {
-            clip = &pet_clips[presses % PET_CLIP_COUNT];
+        button_take_count(&presses);
+        int64_t now_us = esp_timer_get_time();
+        int64_t duration_us = (int64_t)clip->frame_count * 1000000 / clip->fps;
+        if (action_state_update(&action, PET_CLIP_COUNT, presses, now_us, duration_us, automatic)) {
+            clip = &pet_clips[action.index];
             size = (uintptr_t)clip->end - (uintptr_t)clip->start;
-            epoch = esp_timer_get_time();
+            epoch = action.started_us;
             last_log = epoch;
             sent = 0;
             decode_total = transfer_total = 0;

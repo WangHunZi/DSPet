@@ -49,7 +49,7 @@ foreach(name IN LISTS clip_names)
         "    {\"${name}\", ${name}_start, ${name}_end, ${name}_offsets, ${asset_frame_count}, ${asset_fps}, ${asset_keyframe_interval}},\n")
     list(APPEND binaries "${binary}")
 endforeach()
-idf_component_register(SRCS "app_main.c" "display.c" "pet_animation.c" "button.c" "button_filter.c" "indexed_frame.c"
+idf_component_register(SRCS "app_main.c" "display.c" "pet_animation.c" "button.c" "button_filter.c" "indexed_frame.c" "action_state.c"
     INCLUDE_DIRS "." "${CMAKE_CURRENT_BINARY_DIR}"
     REQUIRES esp_lcd esp_driver_gpio esp_driver_spi esp_timer esp_rom
     EMBED_FILES ${binaries})

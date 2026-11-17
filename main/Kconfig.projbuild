@@ -23,3 +23,9 @@ menu "DSPet display"
         bool "Show RGB/white/black test before character playback"
         default n
 endmenu
+
+menu "DSPet playback"
+    config DSPET_AUTO_PLAY
+        bool "Automatically play the next action when a clip finishes"
+        default y
+endmenu
