@@ -1,5 +1,5 @@
 set(asset_dir "${CMAKE_CURRENT_LIST_DIR}/../assets/generated")
-set(clip_names idle)
+set(clip_names idle wave sleep)
 set(declarations "")
 set(records "")
 set(binaries "")

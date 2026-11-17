@@ -1,6 +1,6 @@
 # 角色素材许可
 
-`assets/source/idle.webm` 以及 `assets/generated/` 内的派生素材：
+`assets/source/*.webm` 以及 `assets/generated/` 内的派生素材：
 Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
 （CC BY-NC-SA 4.0，署名—非商业性使用—相同方式共享）。
 
