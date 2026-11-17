@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Convert the pinned upstream idle clip to full-frame, big-endian RGB565.
+"""Convert pinned clips to independently zlib-compressed RGB565 frames.
 
-The ESP32 reads raw frames from flash; VP9 decoding happens only on the host.
+VP9 decoding happens only on the host; ESP32 uses its ROM zlib inflater.
 Run: python3 tools/convert_animation.py
 Requires ffmpeg with libvpx-vp9 and tools/requirements.txt.
 """
@@ -11,11 +11,11 @@ import json
 from pathlib import Path
 import subprocess
 import tempfile
+import zlib
 
 from PIL import Image, ImageChops, ImageOps
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "assets/source/idle.webm"
 OUTPUT = ROOT / "assets/generated"
 WIDTH, HEIGHT = 240, 240
 FPS = 6
@@ -31,9 +31,10 @@ def rgb565_be(image):
     return data
 
 
-def main():
-    source_info = json.loads(SOURCE.with_suffix(".json").read_text())
-    source_hash = hashlib.sha256(SOURCE.read_bytes()).hexdigest()
+def convert(source_path):
+    name = source_path.stem
+    source_info = json.loads(source_path.with_suffix(".json").read_text())
+    source_hash = hashlib.sha256(source_path.read_bytes()).hexdigest()
     if source_hash != source_info["sha256"]:
         raise SystemExit("Source checksum mismatch; refusing to convert another clip")
     OUTPUT.mkdir(parents=True, exist_ok=True)
@@ -42,7 +43,7 @@ def main():
         # ffmpeg's native VP9 decoder can silently discard alpha. Force libvpx.
         subprocess.run([
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
-            "-c:v", "libvpx-vp9", "-i", str(SOURCE),
+            "-c:v", "libvpx-vp9", "-i", str(source_path),
             "-vf", f"fps={FPS}", "-pix_fmt", "rgba",
             str(Path(tmp) / "%04d.png"),
         ], check=True)
@@ -67,7 +68,9 @@ def main():
                 min(union.width, crop[2] + 3), min(union.height, crop[3] + 3))
 
         preview_frames = []
-        binary = OUTPUT / "idle.rgb565"
+        binary = OUTPUT / f"{name}.rgb565z"
+        offsets = [0]
+        uncompressed_hash = hashlib.sha256()
         with binary.open("wb") as output:
             for path in paths:
                 with Image.open(path) as source:
@@ -77,24 +80,34 @@ def main():
                 canvas.alpha_composite(sprite,
                     ((WIDTH - sprite.width) // 2, (HEIGHT - sprite.height) // 2))
                 frame = canvas.convert("RGB")
-                output.write(rgb565_be(frame))
+                pixels = rgb565_be(frame)
+                uncompressed_hash.update(pixels)
+                compressed = zlib.compress(pixels, level=9)
+                output.write(compressed)
+                offsets.append(offsets[-1] + len(compressed))
                 preview_frames.append(frame)
 
         metadata = {
             "width": WIDTH, "height": HEIGHT, "fps": FPS,
             "frame_count": len(paths), "bytes_per_frame": WIDTH * HEIGHT * 2,
-            "format": "RGB565_BE", "crop": crop, "margin": MARGIN,
+            "format": "RGB565_BE_ZLIB", "crop": crop, "margin": MARGIN,
+            "offsets": offsets, "uncompressed_sha256": uncompressed_hash.hexdigest(),
             "background": list(BACKGROUND), "source_sha256": source_hash,
             "sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
         }
-        (OUTPUT / "idle.json").write_text(json.dumps(metadata, indent=2) + "\n")
-        preview_frames[0].save(OUTPUT / "idle-preview.png")
+        (OUTPUT / f"{name}.json").write_text(json.dumps(metadata, indent=2) + "\n")
+        preview_frames[0].save(OUTPUT / f"{name}-preview.png")
         # GIF has 10 ms time units; these durations sum to the original timing.
         durations = [round((i + 1) * 100 / FPS) * 10 - round(i * 100 / FPS) * 10
                      for i in range(len(paths))]
-        preview_frames[0].save(OUTPUT / "idle-preview.gif", save_all=True,
+        preview_frames[0].save(OUTPUT / f"{name}-preview.gif", save_all=True,
             append_images=preview_frames[1:], duration=durations, loop=0, optimize=False)
-        print(json.dumps(metadata, indent=2))
+        print(f"{name}: {len(paths)} frames, {offsets[-1]} compressed bytes")
+
+
+def main():
+    for source in sorted((ROOT / "assets/source").glob("*.webm")):
+        convert(source)
 
 
 if __name__ == "__main__":

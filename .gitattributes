@@ -1,4 +1,5 @@
 *.rgb565 binary
+*.rgb565z binary
 *.webm binary
 *.png binary
 *.gif binary

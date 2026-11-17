@@ -1,23 +1,56 @@
 set(asset_dir "${CMAKE_CURRENT_LIST_DIR}/../assets/generated")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${asset_dir}/idle.json")
-file(READ "${asset_dir}/idle.json" asset_json)
-foreach(field width height fps frame_count bytes_per_frame format sha256)
-    string(JSON asset_${field} GET "${asset_json}" ${field})
+set(clip_names idle)
+set(declarations "")
+set(records "")
+set(binaries "")
+foreach(name IN LISTS clip_names)
+    set(manifest "${asset_dir}/${name}.json")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${manifest}")
+    file(READ "${manifest}" asset_json)
+    foreach(field width height fps frame_count bytes_per_frame format sha256)
+        string(JSON asset_${field} GET "${asset_json}" ${field})
+    endforeach()
+    set(binary "${asset_dir}/${name}.rgb565z")
+    file(SIZE "${binary}" actual_bytes)
+    file(SHA256 "${binary}" actual_sha256)
+    if(NOT asset_format STREQUAL "RGB565_BE_ZLIB" OR
+       NOT asset_width EQUAL 240 OR NOT asset_height EQUAL 240 OR
+       NOT asset_frame_count GREATER 0 OR NOT asset_fps GREATER 0 OR asset_fps GREATER 60 OR
+       NOT asset_bytes_per_frame EQUAL 115200 OR NOT actual_sha256 STREQUAL asset_sha256)
+        message(FATAL_ERROR "Invalid ${name} pack; run tools/convert_animation.py")
+    endif()
+    string(JSON offset_count LENGTH "${asset_json}" offsets)
+    math(EXPR expected_offset_count "${asset_frame_count} + 1")
+    if(NOT offset_count EQUAL expected_offset_count)
+        message(FATAL_ERROR "Invalid ${name} frame index length")
+    endif()
+    set(offsets "")
+    set(previous -1)
+    foreach(i RANGE 0 ${asset_frame_count})
+        string(JSON offset GET "${asset_json}" offsets ${i})
+        if((i EQUAL 0 AND NOT offset EQUAL 0) OR
+           NOT offset GREATER previous OR offset GREATER actual_bytes)
+            message(FATAL_ERROR "Invalid ${name} frame offset ${i}")
+        endif()
+        string(APPEND offsets "${offset},")
+        set(previous ${offset})
+    endforeach()
+    if(NOT previous EQUAL actual_bytes)
+        message(FATAL_ERROR "Invalid ${name} final frame offset")
+    endif()
+    string(APPEND declarations
+        "extern const uint8_t ${name}_start[] asm(\"_binary_${name}_rgb565z_start\");\n"
+        "extern const uint8_t ${name}_end[] asm(\"_binary_${name}_rgb565z_end\");\n"
+        "static const uint32_t ${name}_offsets[] = {${offsets}};\n")
+    string(APPEND records
+        "    {\"${name}\", ${name}_start, ${name}_end, ${name}_offsets, ${asset_frame_count}, ${asset_fps}},\n")
+    list(APPEND binaries "${binary}")
 endforeach()
-math(EXPR expected_frame_bytes "${asset_width} * ${asset_height} * 2")
-math(EXPR expected_bytes "${asset_frame_count} * ${expected_frame_bytes}")
-file(SIZE "${asset_dir}/idle.rgb565" actual_bytes)
-file(SHA256 "${asset_dir}/idle.rgb565" actual_sha256)
-if(NOT asset_format STREQUAL "RGB565_BE" OR
-   NOT asset_width EQUAL 240 OR NOT asset_height EQUAL 240 OR
-   NOT asset_frame_count GREATER 0 OR NOT asset_fps GREATER 0 OR asset_fps GREATER 60 OR
-   NOT asset_bytes_per_frame EQUAL expected_frame_bytes OR
-   NOT actual_bytes EQUAL expected_bytes OR NOT actual_sha256 STREQUAL asset_sha256)
-    message(FATAL_ERROR "Invalid idle animation pack; run tools/convert_animation.py")
-endif()
 idf_component_register(SRCS "app_main.c" "display.c" "pet_animation.c"
     INCLUDE_DIRS "." "${CMAKE_CURRENT_BINARY_DIR}"
-    REQUIRES esp_lcd esp_driver_gpio esp_driver_spi esp_timer
-    EMBED_FILES "${asset_dir}/idle.rgb565")
-configure_file("${CMAKE_CURRENT_LIST_DIR}/asset_config.h.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/asset_config.h" @ONLY)
+    REQUIRES esp_lcd esp_driver_gpio esp_driver_spi esp_timer esp_rom
+    EMBED_FILES ${binaries})
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/asset_config.h"
+    "#pragma once\n#include \"pet_clip.h\"\n${declarations}"
+    "static const pet_clip_t pet_clips[] = {\n${records}};\n"
+    "#define PET_CLIP_COUNT (sizeof(pet_clips) / sizeof(pet_clips[0]))\n")

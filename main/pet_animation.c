@@ -3,27 +3,28 @@
 #include "display.h"
 #include <assert.h>
 #include <inttypes.h>
+#include <stdlib.h>
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
-extern const uint8_t idle_start[] asm("_binary_idle_rgb565_start");
-extern const uint8_t idle_end[] asm("_binary_idle_rgb565_end");
-
-_Static_assert(PET_WIDTH == DISPLAY_WIDTH && PET_HEIGHT == DISPLAY_HEIGHT,
-               "Animation and display dimensions must match");
-_Static_assert(PET_FRAME_BYTES == DISPLAY_FRAME_BYTES, "Invalid frame stride");
+#include "miniz.h"
 
 void pet_play_idle(void)
 {
     static const char *TAG = "pet";
-    size_t size = (uintptr_t)idle_end - (uintptr_t)idle_start;
-    assert(size == (size_t)PET_FRAME_COUNT * PET_FRAME_BYTES);
-    ESP_LOGI(TAG, "Idle animation: %d frames, %d fps, %u flash bytes",
-             PET_FRAME_COUNT, PET_FPS, (unsigned)size);
-    ESP_LOGI(TAG, "Free internal heap after display init: %u bytes",
+    const pet_clip_t *clip = &pet_clips[0];
+    size_t size = (uintptr_t)clip->end - (uintptr_t)clip->start;
+    assert(size == clip->offsets[clip->frame_count]);
+    uint8_t *decoded = heap_caps_malloc(DISPLAY_FRAME_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    // ROM convenience inflater allocates this large state on the stack;
+    // keep it on the heap to fit app_main's normal task stack.
+    tinfl_decompressor *decoder = calloc(1, sizeof(*decoder));
+    assert(decoded && decoder);
+    ESP_LOGI(TAG, "%s: %u frames, %u fps, %u compressed bytes",
+             clip->name, clip->frame_count, clip->fps, (unsigned)size);
+    ESP_LOGI(TAG, "Free internal heap after decoder init: %u bytes",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
     const int64_t epoch = esp_timer_get_time();
@@ -31,18 +32,29 @@ void pet_play_idle(void)
     unsigned sent = 0;
     for (;;) {
         int64_t elapsed = esp_timer_get_time() - epoch;
-        uint64_t sequence = (uint64_t)elapsed * PET_FPS / 1000000;
-        size_t index = sequence % PET_FRAME_COUNT;
-        ESP_ERROR_CHECK(display_present(idle_start + index * PET_FRAME_BYTES, PET_FRAME_BYTES));
+        uint64_t sequence = (uint64_t)elapsed * clip->fps / 1000000;
+        size_t index = sequence % clip->frame_count;
+        uint32_t start = clip->offsets[index], end = clip->offsets[index + 1];
+        assert(start < end && end <= size);
+        size_t input_size = end - start, output_size = DISPLAY_FRAME_BYTES;
+        tinfl_init(decoder);
+        tinfl_status status = tinfl_decompress(decoder, clip->start + start,
+            &input_size, decoded, decoded, &output_size,
+            TINFL_FLAG_PARSE_ZLIB_HEADER | TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+        if (status != TINFL_STATUS_DONE || output_size != DISPLAY_FRAME_BYTES || input_size != end - start) {
+            ESP_LOGE(TAG, "Invalid compressed frame %u", (unsigned)index);
+            abort();
+        }
+        ESP_ERROR_CHECK(display_present(decoded, DISPLAY_FRAME_BYTES));
         ++sent;
 
         // Use wall time, so a slower SPI configuration drops stale frames
         // instead of making a ten-second motion take a minute to play.
-        int64_t deadline = epoch + (int64_t)((sequence + 1) * 1000000 / PET_FPS);
+        int64_t deadline = epoch + (int64_t)((sequence + 1) * 1000000 / clip->fps);
         int64_t now = esp_timer_get_time();
         if (now - last_log >= 10000000) {
-            ESP_LOGI(TAG, "Playing frame %u/%d; sent=%u in %.1fs",
-                     (unsigned)index, PET_FRAME_COUNT, sent, (now - epoch) / 1000000.0);
+            ESP_LOGI(TAG, "Playing %s frame %u/%u; sent=%u in %.1fs",
+                     clip->name, (unsigned)index, clip->frame_count, sent, (now - epoch) / 1000000.0);
             last_log = now;
         }
         int64_t remaining_us = deadline - now;

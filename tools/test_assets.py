@@ -7,6 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 import unittest
+import zlib
 
 from PIL import Image
 from convert_animation import rgb565_be
@@ -22,24 +23,49 @@ class AssetTests(unittest.TestCase):
         self.assertEqual(rgb565_be(image), bytes.fromhex("f80007e0001fffff0000"))
 
     def test_source_is_the_pinned_upstream_clip(self):
-        metadata = json.loads((ROOT / "assets/source/idle.json").read_text())
-        source = (ROOT / "assets/source/idle.webm").read_bytes()
-        self.assertEqual(hashlib.sha256(source).hexdigest(), metadata["sha256"])
+        paths = list((ROOT / "assets/source").glob("*.json"))
+        self.assertTrue(paths)
+        for path in paths:
+            with self.subTest(clip=path.stem):
+                metadata = json.loads(path.read_text())
+                source = path.with_suffix(".webm").read_bytes()
+                self.assertEqual(hashlib.sha256(source).hexdigest(), metadata["sha256"])
 
     def test_pack_size_and_checksum(self):
-        metadata = json.loads((ROOT / "assets/generated/idle.json").read_text())
-        pixels = (ROOT / "assets/generated/idle.rgb565").read_bytes()
-        self.assertEqual(metadata["format"], "RGB565_BE")
-        self.assertEqual((metadata["width"], metadata["height"]), (240, 240))
-        self.assertGreater(metadata["frame_count"], 1)
-        self.assertEqual(len(pixels), metadata["frame_count"] * 240 * 240 * 2)
-        self.assertEqual(hashlib.sha256(pixels).hexdigest(), metadata["sha256"])
+        paths = list((ROOT / "assets/generated").glob("*.json"))
+        self.assertTrue(paths)
+        for path in paths:
+            with self.subTest(clip=path.stem):
+                metadata = json.loads(path.read_text())
+                pixels = path.with_suffix(".rgb565z").read_bytes()
+                self.assertEqual(metadata["format"], "RGB565_BE_ZLIB")
+                self.assertEqual((metadata["width"], metadata["height"]), (240, 240))
+                offsets = metadata["offsets"]
+                self.assertEqual(len(offsets), metadata["frame_count"] + 1)
+                self.assertEqual(offsets[0], 0)
+                self.assertEqual(offsets[-1], len(pixels))
+                digest = hashlib.sha256()
+                for start, end in zip(offsets, offsets[1:]):
+                    self.assertLess(start, end)
+                    frame = zlib.decompress(pixels[start:end])
+                    self.assertEqual(len(frame), 240 * 240 * 2)
+                    digest.update(frame)
+                self.assertEqual(digest.hexdigest(), metadata["uncompressed_sha256"])
+                self.assertEqual(hashlib.sha256(pixels).hexdigest(), metadata["sha256"])
 
     def test_preview_matches_quantized_first_frame(self):
-        with Image.open(ROOT / "assets/generated/idle-preview.png") as preview:
-            first = rgb565_be(preview)
-        pixels = (ROOT / "assets/generated/idle.rgb565").read_bytes()
-        self.assertEqual(first, pixels[:240 * 240 * 2])
+        for path in (ROOT / "assets/generated").glob("*.json"):
+            with self.subTest(clip=path.stem):
+                with Image.open(path.with_name(path.stem + "-preview.png")) as preview:
+                    first = rgb565_be(preview)
+                metadata = json.loads(path.read_text())
+                pixels = path.with_suffix(".rgb565z").read_bytes()
+                self.assertEqual(first, zlib.decompress(pixels[:metadata["offsets"][1]]))
+
+    def test_idle_pixels_are_unchanged_by_compression(self):
+        metadata = json.loads((ROOT / "assets/generated/idle.json").read_text())
+        self.assertEqual(metadata["uncompressed_sha256"],
+            "b5c107e15b02366dbddfdef078622cc6e2b93711fc63d8c000c4bd010c1088f8")
 
 
 if __name__ == "__main__":

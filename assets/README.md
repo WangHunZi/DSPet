@@ -26,9 +26,12 @@ python3 -m venv .venv
 
 输出：
 
-- `generated/idle.rgb565`：240×240，6 fps，逐帧连续存储，每像素高字节在前。
+- `generated/idle.rgb565z`：240×240，6 fps，每帧 RGB565（高字节在前）分别 zlib 压缩。
 - `generated/idle.json`：尺寸、帧数、帧率、固定裁剪范围和数据校验值。
 - `generated/idle-preview.png` / `.gif`：主机预览。
 
-使用原始 RGB565 减少板端解码依赖，不需要联网或在 ESP32 上播放 WebM。
-完整帧大小为 115,200 字节；固件只保留一帧内部 DMA 缓冲，其余帧常驻 Flash。
+帧索引在 JSON 的 `offsets` 中，最后一项为二进制文件长度。
+每帧独立压缩，可从任意帧开始播放，不需要重新解码整个片段。
+板端使用 ESP32-S3 ROM 自带 miniz 解压，不需要联网或在 ESP32 上播放 WebM。
+完整帧大小为 115,200 字节；固件保留一帧解压缓冲与一帧 DMA 缓冲，
+压缩帧常驻 Flash。待机片段从 6.6 MiB 降为约 2 MiB，解压后像素完全一致。
