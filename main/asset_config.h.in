@@ -1,0 +1,8 @@
+#pragma once
+
+// Generated from the validated asset manifest, not manually duplicated.
+#define PET_WIDTH @asset_width@
+#define PET_HEIGHT @asset_height@
+#define PET_FPS @asset_fps@
+#define PET_FRAME_COUNT @asset_frame_count@
+#define PET_FRAME_BYTES @asset_bytes_per_frame@
