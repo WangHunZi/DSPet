@@ -28,11 +28,12 @@ bash scripts/idf.sh -p /dev/cu.usbmodem1101 monitor
 
 脚本默认 SDK 在 `~/esp-idf`，可用 `IDF_PATH`、`IDF_PYTHON_ENV_PATH` 覆盖。
 串口监视器按 Ctrl+] 退出。USB 串口名可能改变。
-板载 Flash 实测 16 MiB，固件使用 8 MiB factory 分区，暂未设置 OTA。
+板载 Flash 实测 16 MiB，固件使用 14 MiB factory 分区，暂未设置 OTA。
+扩大的分区用于容纳更多动作，NVS 和校准分区的位置不变。
 
 屏幕配置在 `menuconfig → DSPet display`：SPI 速度、mode、Y 偏移、反色与 RGB/BGR。
 默认 SPI 10 MHz、mode 0、Y 偏移 0，上电直接播放鲸鱼娘待机动画。
-**运行时短按 BOOT：待机 → 挥手 → 睡觉 → 待机。** 不需要额外接线。
+**运行时短按 BOOT：待机 → 挥手 → 伸懒腰 → 跳舞 → 吃饭 → 睡觉 → 待机。** 不需要额外接线。
 每个动作持续循环；切换时从新动作的第一帧开始，重启后恢复待机。
 BOOT 是 GPIO0，RESET 是重启键；不要同时按这两个键来切动作。
 按键每 10 ms 采样，稳定 30 ms 才触发；长按只切一次，松开后可再按。
@@ -62,8 +63,8 @@ CMake 会核对素材尺寸、长度、格式和 SHA-256，不匹配就停止构
 
 主机预览：[静态](assets/generated/idle-preview.png) / [动画](assets/generated/idle-preview.gif)。
 硬件验收：人物完整、色彩正确、持续循环、有呼吸/眨眼等动作，无花屏或重启。
-短按 BOOT 三次，确认依次挥手、睡觉、回到待机；按住不重复切换。
-串口会输出 `Action: wave` / `sleep` / `idle`，用于核对实际按键切换。
+短按 BOOT 六次，确认六个动作依次切换并回到待机；按住不重复切换。
+串口会输出 `Action: <动作标识>`，用于核对实际按键切换。
 串口 `pet: Playing frame ...` 只能证明程序持续发送，最终以实物观察为准。
 
 若 USB 自动下载无响应，按住 BOOT、点按 RESET、松开 BOOT 后重试烧录。

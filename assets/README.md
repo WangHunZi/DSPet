@@ -8,6 +8,9 @@
 | --- | --- |
 | idle | 待机呼吸休闲 |
 | wave | 点击回应-元气挥手 |
+| stretch | 超大伸懒腰 |
+| dance | 轻快摇摆舞 |
+| eat | 吃白饭 |
 | sleep | 睡觉-循环 |
 
 这不是 DeepSeek 官方形象。动画来源为 PC2005-cloud/dsh-pet；

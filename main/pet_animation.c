@@ -31,7 +31,7 @@ void pet_play(void)
     ESP_LOGI(TAG, "Free internal heap after decoder init: %u bytes",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
-    ESP_LOGI(TAG, "BOOT switches idle -> wave -> sleep; %u clips", (unsigned)PET_CLIP_COUNT);
+    ESP_LOGI(TAG, "BOOT switches through %u clips", (unsigned)PET_CLIP_COUNT);
     int64_t epoch = esp_timer_get_time();
     int64_t last_log = epoch;
     unsigned sent = 0;
