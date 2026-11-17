@@ -1,0 +1,22 @@
+menu "DSPet display"
+    config DSPET_LCD_SPI_MHZ
+        int "LCD SPI clock (MHz)"
+        range 1 20
+        default 1
+    config DSPET_LCD_SPI_MODE
+        int "LCD SPI mode (0 or 3)"
+        range 0 3
+        default 0
+        help
+            Use mode 0 normally; mode 3 is available for panel diagnosis.
+    config DSPET_LCD_Y_GAP
+        int "LCD RAM Y offset"
+        range 0 80
+        default 0
+    config DSPET_LCD_INVERT
+        bool "Enable panel inversion"
+        default y
+    config DSPET_LCD_BGR
+        bool "Swap red and blue"
+        default n
+endmenu
