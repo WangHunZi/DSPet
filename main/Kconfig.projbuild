@@ -24,6 +24,12 @@ menu "DSPet display"
         default n
 endmenu
 
+menu "DSPet audio"
+    config DSPET_AUDIO_CHECK
+        bool "Run the offline I2S hardware check at boot"
+        default y
+endmenu
+
 menu "DSPet playback"
     config DSPET_AUTO_PLAY
         bool "Automatically play the next action when a clip finishes"

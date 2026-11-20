@@ -1,4 +1,5 @@
 #include "display.h"
+#include "audio_check.h"
 #include "button.h"
 #include "pet_animation.h"
 #include "sdkconfig.h"
@@ -14,6 +15,9 @@ void app_main(void)
         display_fill(colors[i]);
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
+#endif
+#ifdef CONFIG_DSPET_AUDIO_CHECK
+    audio_check_run();
 #endif
     button_start();
     pet_play();
