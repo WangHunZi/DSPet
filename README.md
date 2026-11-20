@@ -89,4 +89,21 @@ CMake 会核对素材尺寸、长度、格式和 SHA-256，不匹配就停止构
 3. 在屏幕上循环播放角色待机动画。
 4. 无损压缩帧、添加挥手和睡觉素材、BOOT 按键消抖切换（分别提交）。
 
-本阶段不接入网络、模型或音频。麦克风、喇叭留待后续逐步实现。
+## 离线音频自检
+
+| 信号 | XIAO ESP32S3 Plus | 模块 |
+| --- | --- | --- |
+| BCLK | D0 / GPIO1 | MAX98357A BCLK、INMP441 SCK |
+| WS | D1 / GPIO2 | MAX98357A LRC、INMP441 WS |
+| 播放数据 | D6 / GPIO43 | MAX98357A DIN |
+| 录音数据 | D7 / GPIO44 | INMP441 SD |
+| 电源 | 3V3 / GND | 各模块供电和共地，INMP441 L/R 接 GND |
+
+喇叭的两根线分别接 MAX98357A 的 SPK+ 和 SPK−。
+开机或按一下 RESET 后，先播放一声低音量提示音，约 0.4 秒后录音 3 秒，
+接着回放，再进入动画。听到提示音后说一句话即可核对录音和回放。
+I²S 采用 16 kHz、Philips 格式、双声道 32 位槽，录音取左槽。
+
+串口 `Speaker test frames sent` 只确认驱动已发送。
+`Mic captured` 会打印采样数、直流偏置、峰值和 RMS，是否能正常听到以实物为准。
+录音只暂存在 RAM，回放完成后释放。可在 `menuconfig → DSPet audio` 关闭开机自检。
