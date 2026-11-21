@@ -1,6 +1,6 @@
 #include "display.h"
 #include "audio_check.h"
-#include "button.h"
+#include "DSPetButton.h"
 #include "pet_animation.h"
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
@@ -19,6 +19,6 @@ void app_main(void)
 #ifdef CONFIG_DSPET_AUDIO_CHECK
     audio_check_run();
 #endif
-    button_start();
+    ESP_ERROR_CHECK(DSPetButtonStart());
     pet_play();
 }

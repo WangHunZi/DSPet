@@ -1,7 +1,7 @@
 #include "pet_animation.h"
 #include "asset_config.h"
 #include "display.h"
-#include "button.h"
+#include "DSPetButton.h"
 #include "indexed_frame.h"
 #include "action_state.h"
 #include "sdkconfig.h"
@@ -49,7 +49,7 @@ void pet_play(void)
     int64_t decode_total = 0, transfer_total = 0;
     size_t last_decoded = SIZE_MAX;
     for (;;) {
-        button_take_count(&presses);
+        DSPetButtonTakeCount(&presses);
         int64_t now_us = esp_timer_get_time();
         int64_t duration_us = (int64_t)clip->frame_count * 1000000 / clip->fps;
         if (action_state_update(&action, PET_CLIP_COUNT, presses, now_us, duration_us, automatic)) {

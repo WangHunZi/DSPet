@@ -14,7 +14,8 @@ class ButtonTests(unittest.TestCase):
             executable = str(Path(directory) / "button-test")
             subprocess.run([
                 "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                "-I", str(ROOT / "main"), str(ROOT / "main/button_filter.c"),
+                "-I", str(ROOT / "main/services/input"),
+                str(ROOT / "main/services/input/DSPetButtonFilter.c"),
                 str(ROOT / "tests/button_filter_test.c"), "-o", executable,
             ], check=True)
             subprocess.run([executable], check=True)
