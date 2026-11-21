@@ -2,6 +2,7 @@
 
 XIAO ESP32S3 Plus + 1.3 寸 ST7789（240×240）的桌面角色玩具。
 使用 ESP-IDF v6.0.2；分步提交，便于逐个 review。
+新增固件代码和文档示例遵循 [DSPet 代码风格](docs/coding-style.md)。
 
 ## 接线
 
