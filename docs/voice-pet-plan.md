@@ -20,6 +20,33 @@
 
 顶层按功能找代码。建议在同一个 ESP-IDF main 组件里建立 button/、display/、audio/、app/；main/app_main.c 作为装配入口。每个功能内部按变化原因和测试边界拆文件，同一个目录中的私有函数和数据尽量保留在使用它们的文件里。
 
+下图是 M0 的目标调用关系。每根箭头从调用方指向被调用方，线上文字描述这次调用的用途。方框表示可单独解释和测试的职责；相邻职责可以共用一个实现文件。
+
+```mermaid
+flowchart TB
+    subgraph app["app · 装配与交互"]
+        entry["app_main · 启动"] --> loop["应用循环"]
+        loop -->|"按键次数、当前时间"| policy["动作选择"]
+    end
+    subgraph button["button · 按键"]
+        input["GPIO 采样与计数"] -->|"电平、时间"| filter["消抖判定"]
+    end
+    subgraph display["display · 显示"]
+        player["动画播放器"] -->|"素材、帧号"| decoder["帧解码"]
+        player -->|"RGB565 像素"| panel["ST7789 面板输出"]
+    end
+    subgraph audio["audio · 音频"]
+        check["提示音、录音、回放自检"] -->|"读写 PCM 样本"| device["I²S 收发"]
+    end
+    loop -->|"读取累计按下次数"| input
+    loop -->|"按选定动作推进一帧"| player
+    entry -->|"运行开机自检"| check
+```
+
+**以 BOOT 切换动作为例。** 按键模块累积有效按下次数，应用循环取出次数并调用动作选择逻辑，得到片段编号。播放器依据片段和时间请求解码，取回像素交给面板。改 BOOT 的用途时从 app 入手；改关键帧格式时从解码器入手；查颜色或偏移时从面板入手。现有 `pet_animation.c` 中的 `pet_play()` 同时承担这几步，第一次拆分可从移出按键读取和动作选择开始。
+
+**接口审核按仓库风格执行。** 涉及模块重构时，公开函数按 `DSPet` 前缀命名，例如 `DSPetDisplayPresent`；参数如 `pixelCount`、`frameBytes` 应能看出单位。公开头文件用中文 Doxygen 说明调用上下文、缓冲区有效期和完成条件。以当前面板为例，调用成功返回时这一帧的 DMA 已结束。GPIO、I²S、SPI 与 RTOS 适配在板上验收，消抖、动作仲裁和像素展开可用主机 C11 测试。[代码风格](coding-style.md)
+
 | 功能与内部职责 | 现有代码怎么落位 | 对外输入、输出及所有权 |
 | --- | --- | --- |
 | button：采样与消抖 | button.c 管 GPIO0、10 ms 采样和 FreeRTOS 队列；button_filter.c 管电平稳定时间、重新武装与按住不重复 | 输入物理电平与时间，向 app 报告有效按下。M0 保留累计次数语义，跨多次采样仍能还原快速连按。换动作由 app 决定 |
