@@ -40,7 +40,7 @@
 - 非 `void` 返回使用 `@return`。返回值有多种含义时，逐项说明触发条件。透传驱动错误时写明错误来源。无参数或无返回值时省略对应标签。
 - 用 `@note` 写明任务或 ISR 上下文、阻塞条件、异步完成时机和缓冲区有效期。实现内用中文说明有必要交代的原因，例如为何等待 DMA 完成后才可复用缓冲区。
 
-下面以现有帧解码行为演示新接口的写法。当前函数声明见 [indexed_frame.h](../main/indexed_frame.h)。
+下面以帧解码接口为例。当前函数声明见 [DSPetIndexedFrame.h](../main/services/animation/DSPetIndexedFrame.h)。
 
 ```c
 /**
