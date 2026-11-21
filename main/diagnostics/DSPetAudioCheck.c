@@ -18,12 +18,6 @@ enum {
 
 static const char *const kTag = "audio_check";
 
-static void waitForTxTail(void)
-{
-    // 自检用一轮 DMA 加余量等尾音，写入成功只代表已排队。
-    vTaskDelay(pdMS_TO_TICKS(DSPetAudioDeviceTxBufferMs() + 20));
-}
-
 static esp_err_t playTone(unsigned hz)
 {
     const unsigned samples = kDSPetAudioDeviceSampleRateHz * kToneMs / 1000;
@@ -44,8 +38,7 @@ static esp_err_t playTone(unsigned hz)
         ESP_RETURN_ON_ERROR(DSPetAudioDeviceWrite(chunk, count, kIoTimeoutMs), kTag, "play tone");
         offset += count;
     }
-    waitForTxTail();
-    return ESP_OK;
+    return DSPetAudioDeviceDrain(kIoTimeoutMs);
 }
 
 static esp_err_t capture(int16_t *pcm, size_t sampleCount)
@@ -107,8 +100,7 @@ static esp_err_t replayCapture(const int16_t *pcm, size_t samples)
         ESP_RETURN_ON_ERROR(DSPetAudioDeviceWrite(chunk, count, kIoTimeoutMs), kTag, "play captured audio");
         offset += count;
     }
-    waitForTxTail();
-    return ESP_OK;
+    return DSPetAudioDeviceDrain(kIoTimeoutMs);
 }
 
 static esp_err_t checkMicrophone(void)

@@ -58,10 +58,11 @@ esp_err_t DSPetAudioDeviceRead(int16_t *samples, size_t sampleCount, uint32_t ti
 esp_err_t DSPetAudioDeviceWrite(const int16_t *samples, size_t sampleCount, uint32_t timeoutMs);
 
 /**
- * @brief 返回覆盖一轮 TX DMA 描述符的等待时间。
- * @return 时间上界按毫秒向上取整，仅包含 DMA 音频时长。
- * @note 用于自检等待尾音，精确播放排空需要单独的完成机制。
+ * @brief 根据 TX DMA 完成通知确认已写入的音频通过输出链路。
+ * @param[in] timeoutMs 等待上限，单位毫秒，须大于零。
+ * @return ESP_OK 表示排空。无完成通知时返回 ESP_ERR_TIMEOUT。
+ * @note 由唯一的写任务在最后一次写入后调用，期间继续输出时钟和静音。
  */
-unsigned DSPetAudioDeviceTxBufferMs(void);
+esp_err_t DSPetAudioDeviceDrain(uint32_t timeoutMs);
 
 #endif

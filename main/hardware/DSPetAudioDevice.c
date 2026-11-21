@@ -2,6 +2,10 @@
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
 #include "esp_check.h"
+#include "esp_attr.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
 
 enum { kDmaBlocks = 4, kMicDataPin = GPIO_NUM_44 };
 
@@ -10,9 +14,30 @@ static i2s_chan_handle_t sTx;
 static i2s_chan_handle_t sRx;
 static bool sTxActive;
 static bool sRxActive;
+static SemaphoreHandle_t sTxDone;
+static portMUX_TYPE sTxLock = portMUX_INITIALIZER_UNLOCKED;
+static uint32_t sTxCompletedBlocks;
 // 收发各有独立的槽缓冲，调用方可以分别从读写任务使用。
 static int32_t sTxSlots[kDSPetAudioDeviceBlockSamples][2];
 static int32_t sRxSlots[kDSPetAudioDeviceBlockSamples][2];
+
+static bool IRAM_ATTR txDone(i2s_chan_handle_t channel, i2s_event_data_t *event, void *context)
+{
+    portENTER_CRITICAL_ISR(&sTxLock);
+    ++sTxCompletedBlocks;
+    portEXIT_CRITICAL_ISR(&sTxLock);
+    BaseType_t wake = pdFALSE;
+    xSemaphoreGiveFromISR((SemaphoreHandle_t)context, &wake);
+    return wake == pdTRUE;
+}
+
+static uint32_t txCompletedBlocks(void)
+{
+    portENTER_CRITICAL(&sTxLock);
+    uint32_t completed = sTxCompletedBlocks;
+    portEXIT_CRITICAL(&sTxLock);
+    return completed;
+}
 
 static esp_err_t prepareChannels(void)
 {
@@ -35,6 +60,8 @@ static esp_err_t prepareChannels(void)
     // 先初始化 TX，由 TX 提供共享时钟。
     ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(sTx, &config), kTag, "init TX");
     ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(sRx, &config), kTag, "init RX");
+    const i2s_event_callbacks_t callbacks = {.on_sent = txDone};
+    ESP_RETURN_ON_ERROR(i2s_channel_register_event_callback(sTx, &callbacks, sTxDone), kTag, "init TX completion");
     return gpio_pulldown_en(kMicDataPin);
 }
 
@@ -43,6 +70,11 @@ esp_err_t DSPetAudioDeviceOpen(void)
     if (sTx || sRx) {
         return ESP_ERR_INVALID_STATE;
     }
+    sTxDone = xSemaphoreCreateBinary();
+    if (!sTxDone) {
+        return ESP_ERR_NO_MEM;
+    }
+    sTxCompletedBlocks = 0;
     esp_err_t error = prepareChannels();
     if (error == ESP_OK) {
         error = i2s_channel_enable(sTx);
@@ -95,6 +127,10 @@ esp_err_t DSPetAudioDeviceClose(void)
         ESP_RETURN_ON_ERROR(i2s_del_channel(sTx), kTag, "delete TX");
         sTx = NULL;
     }
+    if (sTxDone) {
+        vSemaphoreDelete(sTxDone);
+        sTxDone = NULL;
+    }
     return ESP_OK;
 }
 
@@ -137,8 +173,24 @@ esp_err_t DSPetAudioDeviceWrite(const int16_t *samples, size_t sampleCount, uint
     return writtenBytes == sizeBytes ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
-unsigned DSPetAudioDeviceTxBufferMs(void)
+esp_err_t DSPetAudioDeviceDrain(uint32_t timeoutMs)
 {
-    return (kDmaBlocks * kDSPetAudioDeviceBlockSamples * 1000 + kDSPetAudioDeviceSampleRateHz - 1) /
-           kDSPetAudioDeviceSampleRateHz;
+    if (!sTxActive) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    TickType_t remaining = pdMS_TO_TICKS(timeoutMs);
+    if (!remaining) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    // 从最后一次写入后数完整一轮 DMA，再多等一块让发送 FIFO 中的尾音通过。
+    const uint32_t startBlock = txCompletedBlocks();
+    TimeOut_t timeout;
+    vTaskSetTimeOutState(&timeout);
+    while ((uint32_t)(txCompletedBlocks() - startBlock) < kDmaBlocks + 1) {
+        if (xTaskCheckForTimeOut(&timeout, &remaining) == pdTRUE) {
+            return ESP_ERR_TIMEOUT;
+        }
+        xSemaphoreTake(sTxDone, remaining);
+    }
+    return ESP_OK;
 }
