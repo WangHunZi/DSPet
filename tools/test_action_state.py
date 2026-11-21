@@ -12,7 +12,8 @@ class ActionStateTests(unittest.TestCase):
             executable = str(Path(directory) / "action-test")
             subprocess.run([
                 "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                "-I", str(ROOT / "main"), str(ROOT / "main/action_state.c"),
+                "-I", str(ROOT / "main/app"),
+                str(ROOT / "main/app/DSPetActionState.c"),
                 str(ROOT / "tests/action_state_test.c"), "-o", executable,
             ], check=True)
             subprocess.run([executable], check=True)

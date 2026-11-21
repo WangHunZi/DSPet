@@ -12,7 +12,8 @@ class IndexedFrameTests(unittest.TestCase):
             executable = str(Path(directory) / "frame-test")
             subprocess.run([
                 "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                "-I", str(ROOT / "main"), str(ROOT / "main/indexed_frame.c"),
+                "-I", str(ROOT / "main/services/animation"),
+                str(ROOT / "main/services/animation/DSPetIndexedFrame.c"),
                 str(ROOT / "tests/indexed_frame_test.c"), "-o", executable,
             ], check=True)
             subprocess.run([executable], check=True)
