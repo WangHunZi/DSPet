@@ -28,6 +28,13 @@ menu "DSPet audio"
     config DSPET_AUDIO_CHECK
         bool "Run the offline I2S hardware check at boot"
         default y
+
+    config DSPET_PLAYBACK_DEMO
+        bool "Use BOOT to play or stop a local speech demo"
+        default n
+        help
+            Generate .cache/playback-demo.pcm with tools/make_playback_demo.sh.
+            When enabled, BOOT toggles demo playback instead of switching animations.
 endmenu
 
 menu "DSPet playback"

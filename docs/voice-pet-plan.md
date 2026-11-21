@@ -27,7 +27,8 @@ main/
 ├── ui/                  桌宠页，组合动画帧与面板输出
 ├── services/
 │   ├── input/           按键采样、消抖和累计按次
-│   └── animation/       选帧、解压和像素展开
+│   ├── animation/       选帧、解压和像素展开
+│   └── audio/           PCM 播放任务、取消请求和完成事件
 ├── hardware/            BOOT GPIO、ST7789 面板、I²S 音频设备
 └── diagnostics/         提示音、三秒录音及回放自检
 ```
@@ -65,7 +66,7 @@ flowchart TB
 | services/animation/ | DSPetAnimation、DSPetIndexedFrame、DSPetClip | 输入片段、起始时刻和当前时刻，输出 RGB565_BE 帧视图与下一帧时刻。像素由动画服务持有，借用有效期到下一次取帧 |
 | ui/ | DSPetPetPage | 接收应用选定的动作，取帧并通过面板接口提交像素，记录实际发送帧率 |
 | app/ 和 app_main.c | DSPetActionState 及应用循环 | 应用读取按键结果并仲裁自动切换。页面按应用选定的片段绘制。后续在应用管理当前页与对话回合 |
-| diagnostics/ | DSPetAudioCheck | 自检持有录音缓冲，利用同一 PCM 接口播放提示音、录音三秒并回放。尾音等待使用 DMA 时长估算 |
+| diagnostics/ | DSPetAudioCheck | 自检持有录音缓冲，利用同一 PCM 接口播放提示音、录音三秒并回放。尾音依据 TX DMA 完成通知确认 |
 
 按键、动作状态、索引展开和素材测试使用 `python3 -m unittest discover -s tools`。固件用 `bash scripts/idf.sh build` 构建。实物验收看开机提示音、清晰的人声回放、自动轮换和 BOOT 手动切换。后续添加页面时，验证切换页面期间播报持续、插话时旧回复停止，以及切回桌宠页后显示最新对话状态。
 
@@ -105,6 +106,11 @@ flowchart TB
 **资源约束要在接网前实测。** 16 kHz PCM 每秒 32,000 字节，10 秒约 313 KiB。历史日志中播放器启动后仅余约 78 KiB 内部堆，甚至 3 秒录音也需要约 94 KiB。建议先验证板载 8 MiB PSRAM 的配置与分配，将有时长上限的录音放入 PSRAM，I²S/SPI DMA 缓冲保留内部 RAM。测 Wi-Fi、TLS 和播放同时工作时的最小剩余堆与最大可分配块。若资源紧张，备选是录音时分块传给网关，在网关组 WAV，再调用整段 ASR。降低动画素材分辨率主要节省 Flash，铺满屏幕后每帧仍需发送 115,200 字节。
 
 ## 按提交执行
+
+本地停播已实现为可选演示。应用接收 BOOT 并选择动作，播放服务消费一段借用的 PCM。
+自然结束和取消分别报告终态，二者都要等已经交给 DMA 的尾部完成。
+取消后等待一轮 DMA 加一个分块的 TX 完成通知，保持共享 I²S 时钟。
+这阶段的实物用例见 [本地播报与停播演示](../README.md#本地播报与停播演示)。
 
 | 阶段 | 改动范围 | 完成证据 |
 | --- | --- | --- |

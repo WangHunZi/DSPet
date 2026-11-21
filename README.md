@@ -108,3 +108,18 @@ I²S 采用 16 kHz、Philips 格式、双声道 32 位槽，录音取左槽。
 串口 `Speaker test frames sent` 只确认驱动已发送。
 `Mic captured` 会打印采样数、直流偏置、峰值和 RMS，是否能正常听到以实物为准。
 录音只暂存在 RAM，回放完成后释放。可在 `menuconfig → DSPet audio` 关闭开机自检。
+
+## 本地播报与停播演示
+
+在 Mac 上运行 `bash tools/make_playback_demo.sh`，用系统中文语音生成约 13 秒的测试素材。
+素材是 16 kHz、单声道、PCM16LE，存放在 `.cache/playback-demo.pcm`。
+然后在 `bash scripts/idf.sh menuconfig` 的 `DSPet audio` 菜单打开 `Use BOOT to play or stop a local speech demo`，重新构建并烧录。
+
+1. 等待桌宠动画出现。空闲时短按 BOOT，从头播放测试句，屏幕显示挥手动作。
+2. 她说到一半时短按 BOOT，确认旧音频停止，屏幕回到当前待机动作。
+3. 再按一次，确认能从头播放。让这一次自然播完，确认也能恢复待机动作。
+
+演示使用独立的 PCM 播放任务。`First PCM block queued` 表示首块已入队。
+`Finished; DMA drained` 和 `Cancelled; DMA drained` 分别对应自然结束和取消完成。
+停播延迟日志从应用发出取消请求算到 DMA 排空确认，实际停声仍需要听喇叭验证。
+演示开关默认关闭。关闭时 BOOT 用于切换动画。

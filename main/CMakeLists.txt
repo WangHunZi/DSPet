@@ -59,6 +59,16 @@ idf_component_register(
                       "${CMAKE_CURRENT_BINARY_DIR}"
     REQUIRES esp_lcd esp_driver_gpio esp_driver_spi esp_driver_i2s esp_timer esp_rom
     EMBED_FILES ${binaries})
+if(CONFIG_DSPET_PLAYBACK_DEMO)
+    set(demo_source "${CMAKE_CURRENT_LIST_DIR}/app/DSPetPlaybackDemoAsset.S")
+    set(demo_pcm "${PROJECT_DIR}/.cache/playback-demo.pcm")
+    if(NOT EXISTS "${demo_pcm}")
+        message(FATAL_ERROR "Playback demo PCM is missing. Run bash tools/make_playback_demo.sh")
+    endif()
+    set_source_files_properties("${demo_source}" PROPERTIES OBJECT_DEPENDS "${demo_pcm}")
+    target_sources(${COMPONENT_LIB} PRIVATE "app/DSPetPlaybackDemo.c" "${demo_source}")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE DSPET_PLAYBACK_DEMO_PCM_PATH="${demo_pcm}")
+endif()
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/asset_config.h"
     "#pragma once\n#include \"DSPetClip.h\"\n${declarations}"
     "static const DSPetClip pet_clips[] = {\n${records}};\n"
