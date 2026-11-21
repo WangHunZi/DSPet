@@ -50,12 +50,12 @@ foreach(name IN LISTS clip_names)
     list(APPEND binaries "${binary}")
 endforeach()
 idf_component_register(
-    SRCS "app_main.c" "app/DSPetActionState.c" "audio_check.c"
-         "hardware/DSPetBootPin.c" "hardware/DSPetPanel.c"
+    SRCS "app_main.c" "app/DSPetActionState.c" "diagnostics/DSPetAudioCheck.c"
+         "hardware/DSPetBootPin.c" "hardware/DSPetPanel.c" "hardware/DSPetAudioDevice.c"
          "services/input/DSPetButton.c" "services/input/DSPetButtonFilter.c"
          "services/animation/DSPetAnimation.c" "services/animation/DSPetIndexedFrame.c"
          "ui/DSPetPetPage.c"
-    PRIV_INCLUDE_DIRS "." "app" "hardware" "services/input" "services/animation" "ui"
+    PRIV_INCLUDE_DIRS "." "app" "hardware" "services/input" "services/animation" "ui" "diagnostics"
                       "${CMAKE_CURRENT_BINARY_DIR}"
     REQUIRES esp_lcd esp_driver_gpio esp_driver_spi esp_driver_i2s esp_timer esp_rom
     EMBED_FILES ${binaries})

@@ -4,7 +4,7 @@
 #include "DSPetPanel.h"
 #include "DSPetPetPage.h"
 #include "asset_config.h"
-#include "audio_check.h"
+#include "DSPetAudioCheck.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -57,7 +57,7 @@ void app_main(void)
     }
 #endif
 #ifdef CONFIG_DSPET_AUDIO_CHECK
-    audio_check_run();
+    DSPetAudioCheckRun();
 #endif
     ESP_ERROR_CHECK(DSPetButtonStart());
     runPet();
