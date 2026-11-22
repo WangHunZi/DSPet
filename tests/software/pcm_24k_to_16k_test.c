@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "DSPetPcm24kTo16k.h"
+#include "DSPetPcmBufferPolicy.h"
 #include "DSPetPcmWav.h"
 
 int main(void) {
@@ -31,5 +32,14 @@ int main(void) {
     uint8_t header[kDSPetPcmWavHeaderBytes];
     DSPetPcmWavHeader(header, 16000, 3);
     assert(sizeof(expected) == sizeof(header) && memcmp(header, expected, sizeof(header)) == 0);
+    const size_t capacity = 2 * 1024 * 1024;
+    assert(!DSPetPcmBufferCanStart(0, capacity, 0, true));
+    assert(!DSPetPcmBufferCanStart(32000, capacity, 1000, false));
+    assert(DSPetPcmBufferCanStart(32000, capacity, 4000, true));
+    assert(!DSPetPcmBufferCanStart(96000, capacity, 7000, false));
+    assert(DSPetPcmBufferCanStart(96000, capacity, 2000, false));
+    assert(DSPetPcmBufferCanStart(capacity - 32000, capacity, 120000, false));
+    assert(!DSPetPcmBufferCanResume(64000, capacity, false));
+    assert(DSPetPcmBufferCanResume(64000, capacity, true));
     return 0;
 }

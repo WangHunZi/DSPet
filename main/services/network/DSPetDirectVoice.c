@@ -9,6 +9,7 @@
 
 #include "DSPetNearSpeech.h"
 #include "DSPetPcm24kTo16k.h"
+#include "DSPetPcmBufferPolicy.h"
 #include "DSPetPcmReplay.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
@@ -19,9 +20,7 @@
 #include "mbedtls/platform_util.h"
 
 enum {
-    kBufferBytes        = 64 * 1024,
-    kPrebufferBytes     = 32 * 1024,
-    kResumeBytes        = 16 * 1024,
+    kBufferBytes        = 2 * 1024 * 1024,
     kReadWaitMs         = 8,
     kWriteWaitMs        = 20,
     kDecodeBytes        = 256,
@@ -57,6 +56,7 @@ struct DSPetDirectVoice {
     DSPetPcm24kTo16k     converter;
     size_t               produced;
     atomic_uint          gaps;
+    atomic_uint          firstAudioMs;
     bool                 refilling;
     bool                 wifiOpen;
 };
@@ -82,6 +82,10 @@ static esp_err_t enqueueAudio(const uint8_t *bytes, size_t count, void *context)
                 return ESP_ERR_INVALID_STATE;
             }
             sent += xStreamBufferSend(voice->audio, pcm + sent, length - sent, pdMS_TO_TICKS(kWriteWaitMs));
+        }
+        if (!voice->produced && samples) {
+            uint32_t nowMs = (uint32_t) (esp_timer_get_time() / 1000);
+            atomic_store(&voice->firstAudioMs, nowMs ? nowMs : 1);
         }
         voice->produced += samples;
         bytes += take;
@@ -183,6 +187,7 @@ esp_err_t DSPetDirectVoiceCreate(const DSPetDirectSettings *settings, DSPetDirec
     atomic_init(&voice->cancelled, false);
     atomic_init(&voice->stopping, false);
     atomic_init(&voice->gaps, 0);
+    atomic_init(&voice->firstAudioMs, 0);
     voice->buffers  = heap_caps_calloc(1, sizeof(*voice->buffers), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     voice->exited   = xSemaphoreCreateBinary();
     esp_err_t error = voice->buffers && voice->exited ? DSPetWifiOpen() : ESP_ERR_NO_MEM;
@@ -234,6 +239,7 @@ esp_err_t DSPetDirectVoiceSubmit(
     voice->produced  = 0;
     memcpy(voice->buffers->recording, samples, sampleCount * sizeof(*samples));
     atomic_store(&voice->gaps, 0);
+    atomic_store(&voice->firstAudioMs, 0);
     voice->refilling = false;
     atomic_store(&voice->cancelled, false);
     atomic_store(&voice->complete, false);
@@ -242,14 +248,17 @@ esp_err_t DSPetDirectVoiceSubmit(
 }
 
 DSPetDirectVoiceStatus DSPetDirectVoiceGetStatus(DSPetDirectVoice *voice) {
-    const bool      complete = atomic_load(&voice->complete);
-    const esp_err_t result   = complete ? voice->result : ESP_OK;
-    const size_t    bytes    = xStreamBufferBytesAvailable(voice->audio);
+    const bool      complete  = atomic_load(&voice->complete);
+    const esp_err_t result    = complete ? voice->result : ESP_OK;
+    const size_t    bytes     = xStreamBufferBytesAvailable(voice->audio);
+    const uint32_t  firstMs   = atomic_load(&voice->firstAudioMs);
+    const uint32_t  nowMs     = (uint32_t) (esp_timer_get_time() / 1000);
+    const uint32_t  elapsedMs = firstMs ? nowMs - firstMs : 0;
     return (DSPetDirectVoiceStatus) {
         .turnId   = voice->turnId,
         .complete = complete,
         .result   = result,
-        .ready    = bytes >= kPrebufferBytes || (complete && result == ESP_OK && bytes),
+        .ready    = result == ESP_OK && DSPetPcmBufferCanStart(bytes, kBufferBytes, elapsedMs, complete),
     };
 }
 
@@ -263,7 +272,8 @@ esp_err_t DSPetDirectVoiceRead(void *context, int16_t *samples, size_t capacityS
     if (complete && voice->result != ESP_OK) {
         return voice->result;
     }
-    if (voice->refilling && !complete && xStreamBufferBytesAvailable(voice->audio) < kResumeBytes) {
+    if (voice->refilling &&
+        !DSPetPcmBufferCanResume(xStreamBufferBytesAvailable(voice->audio), kBufferBytes, complete)) {
         vTaskDelay(pdMS_TO_TICKS(kReadWaitMs));
         return ESP_ERR_TIMEOUT;
     }
