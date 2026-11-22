@@ -59,6 +59,9 @@ idf_component_register(
                       "${CMAKE_CURRENT_BINARY_DIR}"
     REQUIRES console esp_app_format esp_lcd esp_driver_gpio esp_driver_spi esp_driver_i2s esp_timer esp_rom
     EMBED_FILES ${binaries})
+if(CONFIG_DSPET_AEC)
+    target_sources(${COMPONENT_LIB} PRIVATE "services/audio/DSPetAec.c" "services/audio/DSPetAecSync.c")
+endif()
 if(CONFIG_DSPET_PLAYBACK_DEMO OR CONFIG_DSPET_CONSOLE_TESTS)
     set(demo_source "${CMAKE_CURRENT_LIST_DIR}/app/DSPetPlaybackDemoAsset.S")
     set(demo_pcm "${PROJECT_DIR}/.cache/playback-demo.pcm")

@@ -25,6 +25,11 @@ menu "DSPet display"
 endmenu
 
 menu "DSPet audio"
+    config DSPET_AEC
+        bool "Enable the ESP-SR acoustic echo cancellation service"
+        depends on IDF_TARGET_ESP32S3 && SPIRAM
+        default n
+
     config DSPET_AUDIO_CHECK
         bool "Run the offline I2S hardware check at boot"
         default y

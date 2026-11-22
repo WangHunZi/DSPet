@@ -1,0 +1,6 @@
+dependencies:
+  espressif/esp-sr:
+    version: "==2.6.1"
+    require: private
+    rules:
+      - if: "$CONFIG{DSPET_AEC} == True"
