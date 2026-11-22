@@ -159,6 +159,9 @@ dspet info
 dspet test hardware audio duplex
 dspet test hardware audio alignment
 dspet test hardware audio aec
+dspet test hardware audio barge-in-quiet
+dspet test human audio barge-in
+dspet test human audio barge-in-keyboard
 dspet test status
 dspet test human audio loopback
 dspet test confirm 2 pass
@@ -173,6 +176,10 @@ AEC 用例播放固定语音，请在测试期间保持安静。它先测底噪�
 `reduction_db` 记录抑制量，`max_process_us` 与 `frame_budget_us` 用于检查实时性。
 此用例要求回录有足够回声、抑制至少 6 dB、无丢块，且处理时间小于一帧时长。
 测试配置启用 ESP-SR 2.6.1 的双工低开销 AEC。若复用已有的测试 `sdkconfig`，在 `DSPet audio` 菜单启用 AEC 服务后再构建。
+自然插话的安静用例要求她自己说完且没有误停。人工插话用例在她播报中途直接说「等一下，我问的是明天」。
+她应该停播并继续听，句尾停顿后回放。用 `dspet test confirm <实际编号> pass|fail` 确认是否听清整句话。
+当前本地原型从首块播报入队约 850 ms 后开始接受插话，保留约 320 ms 的句首预录。确认开口后，续录采用较低的能量门限，连续 700 ms 安静时收尾。
+键盘用例要求在播报中途正常打字几秒并保持不说话，播完后再确认。串口报告 `cancel_to_drain_us`、预录样本数和连续性错误，停播耗时从应用发出取消请求开始计算。
 回放用例提示你在提示音后说话，回放后进入 `waiting_human`，能听清输入 `pass`，否则输入 `fail`。
 同一时间接受一个用例。`DSPET_TEST` 行带运行编号和状态，`DSPET_TEST_METRIC` 行报告双路测量值。
 运行编号和状态保存在 RAM，重启后重新计数。如需留存整轮证据，可用电脑保存串口输出。
