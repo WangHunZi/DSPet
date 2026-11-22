@@ -21,10 +21,12 @@ esp_err_t DSPetSpeechDetectorCreate(DSPetSpeechDetector **detector);
  * @brief 从去回声的近端音频判断当前帧是否有人声。
  * @param[in,out] detector 同一任务持有的实例。
  * @param[in] pcm 320 个单声道 PCM16 样本，仅在调用时借用。
+ * @param[in] recording 已确认开口，使用续录能量判定。
  * @param[out] rms 本帧限幅计量后的 PCM RMS。
- * @return 人声分类通过后的能量等级。
+ * @return 触发或续录使用的语音活动等级。
  */
-DSPetSpeechEvidence DSPetSpeechDetectorProcess(DSPetSpeechDetector *detector, const int16_t *pcm, float *rms);
+DSPetSpeechEvidence
+DSPetSpeechDetectorProcess(DSPetSpeechDetector *detector, const int16_t *pcm, bool recording, float *rms);
 
 /**
  * @brief 释放人声检测实例。

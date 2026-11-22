@@ -43,7 +43,7 @@ static const TestCase kCases[] = {
 #ifdef CONFIG_DSPET_AEC
     {"hardware", "aec", "audio_aec", DSPetAecTestRun, NULL},
     {"hardware", "barge-in-quiet", "audio_barge_in_quiet", DSPetBargeInQuietTestRun, NULL},
-    {"human", "barge-in", "audio_barge_in", DSPetBargeInSpeechTestRun, "若插话成功停播，且回放听清了句首"},
+    {"human", "barge-in", "audio_barge_in", DSPetBargeInSpeechTestRun, "若插话成功停播，且回放听清了整句"},
     {"human",
      "barge-in-keyboard",
      "audio_barge_in_keyboard",

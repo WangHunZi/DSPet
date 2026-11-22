@@ -7,12 +7,13 @@
 #include "esp_vad.h"
 
 enum {
-    kSampleRateHz = 16000,
-    kFrameMs      = 20,
-    kVadGain      = 8,
-    kOnsetRms     = 110,
-    kEnergyRms    = 52,
-    kMeterPeak    = 384,
+    kSampleRateHz    = 16000,
+    kFrameMs         = 20,
+    kVadGain         = 8,
+    kOnsetRms        = 110,
+    kEnergyRms       = 52,
+    kContinuationRms = 30,
+    kMeterPeak       = 384,
 };
 
 struct DSPetSpeechDetector {
@@ -38,7 +39,8 @@ esp_err_t DSPetSpeechDetectorCreate(DSPetSpeechDetector **out) {
     return ESP_OK;
 }
 
-DSPetSpeechEvidence DSPetSpeechDetectorProcess(DSPetSpeechDetector *detector, const int16_t *pcm, float *rms) {
+DSPetSpeechEvidence
+DSPetSpeechDetectorProcess(DSPetSpeechDetector *detector, const int16_t *pcm, bool recording, float *rms) {
     uint32_t squares = 0;
     for (size_t i = 0; i < kDSPetSpeechFrameSamples; ++i) {
         int32_t magnitude = abs(pcm[i]);
@@ -53,6 +55,10 @@ DSPetSpeechEvidence DSPetSpeechDetectorProcess(DSPetSpeechDetector *detector, co
         detector->amplified[i] = (int16_t) sample;
     }
     *rms = sqrtf((float) squares / kDSPetSpeechFrameSamples);
+    if (recording) {
+        // 开口已确认，续录时保留 VAD 可能漏判的轻声和辅音。
+        return *rms >= kContinuationRms ? kDSPetSpeechVoiced : kDSPetSpeechSilent;
+    }
     // WebRTC 的保持状态仍持续更新，能量门限避免一个孤立敲击延长命中。
     if (vad_process(detector->vad, detector->amplified, kSampleRateHz, kFrameMs) != VAD_SPEECH ||
         squares < kEnergyRms * kEnergyRms * kDSPetSpeechFrameSamples) {

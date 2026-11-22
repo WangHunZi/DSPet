@@ -32,16 +32,21 @@ int main(void) {
     assert(push(&capture, 33, kDSPetSpeechVoiced, true) == kDSPetSpeechNoEvent);
     assert(recording[kDSPetSpeechPreRollSamples] == 33);
 
-    int16_t shortRecording[40 * kDSPetSpeechFrameSamples];
+    int16_t shortRecording[70 * kDSPetSpeechFrameSamples];
     DSPetSpeechCaptureInit(&capture, shortRecording, sizeof(shortRecording) / sizeof(shortRecording[0]));
     for (int i = 0; i < 3; ++i) {
         assert(push(&capture, 1, kDSPetSpeechVoiced, true) == kDSPetSpeechNoEvent);
     }
     assert(push(&capture, 1, kDSPetSpeechStrong, true) == kDSPetSpeechStarted);
-    for (int i = 0; i < 21; ++i) {
+    for (int i = 0; i < 25; ++i) {
+        assert(push(&capture, 0, kDSPetSpeechSilent, true) == kDSPetSpeechNoEvent);
+    }
+    assert(push(&capture, 2, kDSPetSpeechVoiced, false) == kDSPetSpeechNoEvent);
+    for (int i = 0; i < 34; ++i) {
         assert(push(&capture, 0, kDSPetSpeechSilent, true) == kDSPetSpeechNoEvent);
     }
     assert(push(&capture, 0, kDSPetSpeechSilent, true) == kDSPetSpeechFinished);
-    assert(capture.recordedSamples == 10 * kDSPetSpeechFrameSamples);
+    assert(capture.recordedSamples == 50 * kDSPetSpeechFrameSamples);
+    assert(shortRecording[29 * kDSPetSpeechFrameSamples] == 2);
     return 0;
 }

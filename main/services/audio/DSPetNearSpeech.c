@@ -66,7 +66,8 @@ static void classify(DSPetNearSpeech *speech, const int16_t *pcm, size_t samples
         samples -= count;
         if (speech->pendingSamples == kDSPetSpeechFrameSamples) {
             float               rms;
-            DSPetSpeechEvidence evidence = DSPetSpeechDetectorProcess(speech->detector, speech->pending, &rms);
+            DSPetSpeechEvidence evidence =
+                DSPetSpeechDetectorProcess(speech->detector, speech->pending, speech->capture.active, &rms);
             if (armed && rms > speech->peakRms) {
                 speech->peakRms = rms;
             }

@@ -4,7 +4,7 @@
 #include "esp_err.h"
 
 /**
- * @brief 验证用户插话可停播，回放录音供人听辨句首。
+ * @brief 验证用户插话可停播，回放录音供人听辨整句。
  * @return 停播与回放成功时返回 ESP_OK，否则返回测试或驱动错误。
  */
 esp_err_t DSPetBargeInSpeechTestRun(void);

@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-enum { kSpeechFrames = 4, kEndpointFrames = 22, kTailFrames = 6 };
+enum { kSpeechFrames = 4, kEndpointFrames = 35, kTailFrames = 20 };
 
 void DSPetSpeechCaptureInit(DSPetSpeechCapture *capture, int16_t *recording, size_t capacitySamples) {
     memset(capture, 0, sizeof(*capture));
