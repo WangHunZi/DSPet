@@ -71,6 +71,9 @@ esp_err_t DSPetWifiOpen(void) {
         error = esp_wifi_set_mode(WIFI_MODE_STA);
     }
     if (error == ESP_OK) {
+        error = esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW20);
+    }
+    if (error == ESP_OK) {
         error = esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, networkEvent, sEvents, &sIpHandler);
     }
     if (error == ESP_OK) {
@@ -80,6 +83,9 @@ esp_err_t DSPetWifiOpen(void) {
     if (error == ESP_OK) {
         error    = esp_wifi_start();
         sStarted = error == ESP_OK;
+    }
+    if (error == ESP_OK) {
+        error = esp_wifi_set_ps(WIFI_PS_NONE);
     }
     if (error != ESP_OK) {
         DSPetWifiClose();

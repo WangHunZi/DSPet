@@ -63,6 +63,9 @@ static esp_err_t postJson(const char            *key,
     if (error == ESP_OK) {
         error = esp_http_client_set_header(http, "Content-Type", "application/json");
     }
+    if (error == ESP_OK) {
+        error = esp_http_client_set_header(http, "Connection", "close");
+    }
     const int64_t startedUs = esp_timer_get_time();
     if (error == ESP_OK) {
         error = esp_http_client_open(http, strlen(json));
