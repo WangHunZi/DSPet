@@ -19,7 +19,8 @@ enum {
     kPlaybackToMicUs = 2100,
     kFilterLeadUs    = 1000,
     kMicWarmupUs     = 350000,
-    kQuietMeasureUs  = 850000,
+    kQuietMeasureUs  = 1550000,
+    kQuietMaxFrames  = 64,
     kAdaptationUs    = 2000000,
     kMinMeasureUs    = 5000000,
     kTapWaitMs       = 25,
@@ -48,6 +49,8 @@ typedef struct {
     int64_t      captureStartUs;
     int64_t      playbackStartUs;
     Power        quietMic;
+    uint64_t     quietFrameSquares[kQuietMaxFrames];
+    size_t       quietFrames;
     Power        rawMic;
     Power        residual;
     Power        playedReference;
@@ -112,7 +115,13 @@ static esp_err_t collectFrame(AecTest *test) {
     measureHeap(test);
 
     if (!test->playbackStartUs && startUs - test->captureStartUs >= kMicWarmupUs) {
-        measurePower(&test->quietMic, test->mic, test->frameSamples);
+        Power framePower = {0};
+        measurePower(&framePower, test->mic, test->frameSamples);
+        test->quietMic.squares += framePower.squares;
+        test->quietMic.count += framePower.count;
+        if (test->quietFrames < kQuietMaxFrames) {
+            test->quietFrameSquares[test->quietFrames++] = framePower.squares;
+        }
     } else if (test->playbackStartUs && startUs - test->playbackStartUs >= kAdaptationUs) {
         // 只比较自适应稳定后的长窗口，减少回声消除帧延迟在窗口两端的影响。
         measurePower(&test->rawMic, test->mic, test->frameSamples);
@@ -168,21 +177,32 @@ static esp_err_t runPlayback(AecTest *test, size_t sampleCount, bool *playbackId
     }
 }
 
-static esp_err_t evaluate(const AecTest *test) {
-    const double  quiet         = rms(test->quietMic);
+static int compareFrameSquares(const void *left, const void *right) {
+    uint64_t a = *(const uint64_t *) left;
+    uint64_t b = *(const uint64_t *) right;
+    return (a > b) - (a < b);
+}
+
+static esp_err_t evaluate(AecTest *test) {
+    const double quiet = rms(test->quietMic);
+    // 保留整段底噪供排查，用帧功率中位数避免短促尖峰主导比较。
+    qsort(test->quietFrameSquares, test->quietFrames, sizeof(test->quietFrameSquares[0]), compareFrameSquares);
+    const double  typicalQuiet  = sqrt((double) test->quietFrameSquares[test->quietFrames / 2] / test->frameSamples);
     const double  raw           = rms(test->rawMic);
     const double  residual      = rms(test->residual);
     const double  reference     = rms(test->playedReference);
     const double  reductionDb   = raw > 0 ? 20 * log10(raw / fmax(residual, 1.0)) : 0;
     const int64_t frameBudgetUs = (int64_t) test->frameSamples * 1000000 / kDSPetAudioDeviceSampleRateHz;
-    printf("DSPET_TEST_METRIC aec_quiet_rms=%.1f aec_raw_rms=%.1f aec_out_rms=%.1f ref_rms=%.1f"
-           " reduction_db=%.2f measured_samples=%u\n",
-           quiet,
-           raw,
-           residual,
-           reference,
-           reductionDb,
-           (unsigned) test->rawMic.count);
+    printf(
+        "DSPET_TEST_METRIC aec_quiet_rms=%.1f aec_quiet_median_rms=%.1f aec_raw_rms=%.1f aec_out_rms=%.1f ref_rms=%.1f"
+        " reduction_db=%.2f measured_samples=%u\n",
+        quiet,
+        typicalQuiet,
+        raw,
+        residual,
+        reference,
+        reductionDb,
+        (unsigned) test->rawMic.count);
     printf("DSPET_TEST_METRIC aec_frames=%u aec_frame_samples=%u max_process_us=%" PRId64 " frame_budget_us=%" PRId64
            " ref_offset_us=%u\n",
            test->frames,
@@ -191,8 +211,8 @@ static esp_err_t evaluate(const AecTest *test) {
            frameBudgetUs,
            kPlaybackToMicUs - kFilterLeadUs);
 
-    if (!test->quietMic.count || test->rawMic.count < kMinMeasureUs / 1000 * (kDSPetAudioDeviceSampleRateHz / 1000) ||
-        reference < 100 || raw < 30 || raw < 1.5 * quiet) {
+    if (!test->quietFrames || test->rawMic.count < kMinMeasureUs / 1000 * (kDSPetAudioDeviceSampleRateHz / 1000) ||
+        reference < 100 || raw < 30 || raw < 1.5 * typicalQuiet) {
         puts("DSPET_TEST_METRIC aec_reason=insufficient_echo_or_noisy_room");
         return ESP_ERR_INVALID_RESPONSE;
     }
