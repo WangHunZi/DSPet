@@ -68,7 +68,7 @@ flowchart TB
 | app/ 和 app_main.c | DSPetActionState 及应用循环 | 应用读取按键结果并仲裁自动切换。页面按应用选定的片段绘制。后续在应用管理当前页与对话回合 |
 | diagnostics/ | DSPetAudioCheck | 自检持有录音缓冲，利用同一 PCM 接口播放提示音、录音三秒并回放。尾音依据 TX DMA 完成通知确认 |
 
-按键、动作状态、索引展开和素材测试使用 `python3 -m unittest discover -s tools`。固件用 `bash scripts/idf.sh build` 构建。实物验收看开机提示音、清晰的人声回放、自动轮换和 BOOT 手动切换。后续添加页面时，验证切换页面期间播报持续、插话时旧回复停止，以及切回桌宠页后显示最新对话状态。
+按键、动作状态、索引展开和素材测试使用 `python3 -m unittest discover -s tests/software`。固件用 `bash scripts/idf.sh build` 构建。实物验收看开机提示音、清晰的人声回放、自动轮换和 BOOT 手动切换。后续添加页面时，验证切换页面期间播报持续、插话时旧回复停止，以及切回桌宠页后显示最新对话状态。
 
 ## 接口契约 v0.2（待评审）
 

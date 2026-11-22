@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 import unittest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 class ActionStateTests(unittest.TestCase):
@@ -14,6 +14,6 @@ class ActionStateTests(unittest.TestCase):
                 "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                 "-I", str(ROOT / "main/app"),
                 str(ROOT / "main/app/DSPetActionState.c"),
-                str(ROOT / "tests/action_state_test.c"), "-o", executable,
+                str(ROOT / "tests/software/action_state_test.c"), "-o", executable,
             ], check=True)
             subprocess.run([executable], check=True)

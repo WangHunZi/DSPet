@@ -1,18 +1,20 @@
 """Host checks for the pixel format and shipped animation pack.
 
-Run: python3 -m unittest discover -s tools -p 'test_*.py'
+Run: python3 -m unittest discover -s tests/software -p 'test_*.py'
 """
 
 import hashlib
 import json
 from pathlib import Path
+import sys
 import unittest
 import zlib
 
 from PIL import Image
-from convert_animation import rgb565_be, decode_indexed, restore_delta
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tools"))
+from convert_animation import rgb565_be, decode_indexed, restore_delta
 
 
 class AssetTests(unittest.TestCase):

@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 import unittest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 class IndexedFrameTests(unittest.TestCase):
@@ -14,6 +14,6 @@ class IndexedFrameTests(unittest.TestCase):
                 "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                 "-I", str(ROOT / "main/services/animation"),
                 str(ROOT / "main/services/animation/DSPetIndexedFrame.c"),
-                str(ROOT / "tests/indexed_frame_test.c"), "-o", executable,
+                str(ROOT / "tests/software/indexed_frame_test.c"), "-o", executable,
             ], check=True)
             subprocess.run([executable], check=True)

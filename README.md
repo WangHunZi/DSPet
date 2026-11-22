@@ -62,7 +62,7 @@ BOOT 是 GPIO0，RESET 是重启键；不要同时按这两个键来切动作。
 python3 -m venv .venv
 .venv/bin/pip install -r tools/requirements.txt
 .venv/bin/python tools/convert_animation.py
-.venv/bin/python -m unittest discover -s tools -p 'test_*.py'
+.venv/bin/python -m unittest discover -s tests/software -p 'test_*.py'
 ```
 
 需要 ffmpeg（libvpx-vp9）。预生成素材已经提交，直接编译不需要 Python 图像库或 ffmpeg。

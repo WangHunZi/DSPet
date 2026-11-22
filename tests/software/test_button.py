@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 class ButtonTests(unittest.TestCase):
@@ -16,6 +16,6 @@ class ButtonTests(unittest.TestCase):
                 "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                 "-I", str(ROOT / "main/services/input"),
                 str(ROOT / "main/services/input/DSPetButtonFilter.c"),
-                str(ROOT / "tests/button_filter_test.c"), "-o", executable,
+                str(ROOT / "tests/software/button_filter_test.c"), "-o", executable,
             ], check=True)
             subprocess.run([executable], check=True)
