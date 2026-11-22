@@ -55,7 +55,7 @@ static int startDirectVoice(const char *ssid, const char *timeArg) {
     esp_err_t error = ESP_ERR_INVALID_ARG;
     if (DSPetConsoleReadSecret("wifi_password", settings.password, sizeof(settings.password)) &&
         DSPetConsoleReadSecret("deepseek_key", settings.key, sizeof(settings.key)) && strlen(settings.password) >= 8) {
-        error = DSPetLocalVoiceEnableDirect(&settings);
+        error = DSPetLocalVoiceEnableDirect(&settings, false);
     }
     mbedtls_platform_zeroize(&settings, sizeof(settings));
     printf("DSPET_VOICE_COMMAND action=direct result=%s\n", esp_err_to_name(error));

@@ -6,7 +6,6 @@
 
 #include "DSPetNearSpeech.h"
 #include "DSPetPlayback.h"
-#include "DSPetWakeWord.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -30,7 +29,6 @@ enum {
 typedef struct {
     DSPetVoiceSession session;
     DSPetNearSpeech  *speech;
-    DSPetWakeWord    *wakeWord;
     int64_t           armedUs;
     int64_t           deadlineUs;
     int64_t           cancelledUs;
@@ -249,7 +247,6 @@ static void syncListeningMode(LocalVoice *voice) {
     if (voice->playbackTurnId) {
         DSPetPlaybackCancel();
     }
-    DSPetWakeWordReset(voice->wakeWord);
     DSPetVoiceSessionApply(&voice->session, kDSPetVoiceStop, 0);
     publish(voice, "always_stop");
 }
@@ -318,7 +315,6 @@ static esp_err_t advanceSession(LocalVoice *voice, int64_t nowUs) {
         }
 #endif
         if (DSPetVoiceSessionApply(&voice->session, kDSPetVoiceListenTimeout, 0)) {
-            DSPetWakeWordReset(voice->wakeWord);
             publish(voice, "listen_timeout");
         }
     }
@@ -327,10 +323,6 @@ static esp_err_t advanceSession(LocalVoice *voice, int64_t nowUs) {
 
 static esp_err_t processBlock(LocalVoice *voice, const DSPetAudioTapBlock *block) {
     if (voice->session.state == kDSPetVoiceIdle) {
-        if (block->source == kDSPetAudioTapMic &&
-            DSPetWakeWordPush(voice->wakeWord, block->samples, kDSPetAudioDeviceBlockSamples)) {
-            startSession(voice, "wake_word");
-        }
         return ESP_OK;
     }
     const int64_t       nowUs = esp_timer_get_time();
@@ -393,7 +385,7 @@ static esp_err_t runSession(LocalVoice *voice) {
 }
 
 static void runVoice(LocalVoice *voice) {
-    // 模型初始化比 DMA 队列的时间窗长，准备工作都在打开采样前完成。
+    // 语音处理初始化比 DMA 队列的时间窗长，准备工作都在打开采样前完成。
     esp_err_t error = ESP_OK;
 #ifdef CONFIG_DSPET_DIRECT_TEST
     if (atomic_load(&sUseDirect)) {
@@ -402,9 +394,6 @@ static void runVoice(LocalVoice *voice) {
     }
     voice->submittedTurnId = 0;
 #endif
-    if (error == ESP_OK) {
-        error = DSPetWakeWordCreate(&voice->wakeWord);
-    }
     if (error == ESP_OK) {
         error = DSPetNearSpeechCreate(&voice->speech);
     }
@@ -416,6 +405,9 @@ static void runVoice(LocalVoice *voice) {
         error = DSPetAudioDeviceStartTap();
     }
     if (error == ESP_OK) {
+#ifdef CONFIG_DSPET_DIRECT_TEST
+        syncListeningMode(voice);
+#endif
         atomic_store(&sMode, kDSPetLocalVoiceOn);
 #ifdef CONFIG_DSPET_DIRECT_TEST
         if (voice->direct) {
@@ -443,9 +435,7 @@ static void runVoice(LocalVoice *voice) {
         ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetAudioDeviceClose());
     }
     DSPetNearSpeechDestroy(voice->speech);
-    DSPetWakeWordDestroy(voice->wakeWord);
     voice->speech      = NULL;
-    voice->wakeWord    = NULL;
     voice->cancelledUs = 0;
     if (error != ESP_OK) {
         ESP_LOGE(kTag, "Voice session stopped: %s", esp_err_to_name(error));
@@ -517,12 +507,13 @@ uint32_t DSPetLocalVoiceGetSpeakingTurn(void) { return atomic_load(&sSpeakingTur
 void DSPetLocalVoiceSpeakingFramePresented(uint32_t turnId) { atomic_store(&sPresentedSpeakingTurn, turnId); }
 
 #ifdef CONFIG_DSPET_DIRECT_TEST
-esp_err_t DSPetLocalVoiceEnableDirect(const DSPetDirectSettings *settings) {
+esp_err_t DSPetLocalVoiceEnableDirect(const DSPetDirectSettings *settings, bool startListening) {
     int expected = kDSPetLocalVoiceOff;
     if (!sTask || !atomic_compare_exchange_strong(&sMode, &expected, kDSPetLocalVoiceStarting)) {
         return ESP_ERR_INVALID_STATE;
     }
     sDirectSettings = *settings;
+    atomic_store(&sAlwaysRequested, startListening);
     atomic_store(&sUseDirect, true);
     xTaskNotifyGive(sTask);
     return ESP_OK;

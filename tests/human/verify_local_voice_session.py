@@ -1,4 +1,4 @@
-"""协同验收一次唤醒、连续三句、插话和超时。打印板载证据，由人确认实际听感。"""
+"""协同验收一次启动、连续三句、插话和超时。打印板载证据，由人确认实际听感。"""
 
 import argparse
 from pathlib import Path
@@ -10,8 +10,8 @@ from verify_local_voice import Board
 
 def verify_session(board):
     board.status()
-    print("请说「你好小智」。看到角色动作切换后说第一句，等她完整答完。", flush=True)
-    first = board.expect(r"DSPET_VOICE event=wake_word state=listening turn=(\d+)", 90).group(1)
+    print("请短按 BOOT。看到角色动作切换后说第一句，等她完整答完。", flush=True)
+    first = board.expect(r"DSPET_VOICE event=manual_start state=listening turn=(\d+)", 90).group(1)
     board.expect(fr"DSPET_VOICE_CAPTURE turn={first} samples=\d+ preroll=\d+ capped=0", 14)
     board.expect(fr"DSPET_VOICE event=playback_started state=speaking turn={first}\b", 16)
     print("她说完后直接说第二句。在第二次播报中途，用正常音量插话说「等一下，我问的是明天」。", flush=True)

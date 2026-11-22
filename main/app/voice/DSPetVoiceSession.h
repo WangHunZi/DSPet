@@ -6,7 +6,7 @@
 
 /** @brief 应用层语音会话状态。 */
 typedef enum {
-    kDSPetVoiceIdle,      /**< 等待唤醒或手动发起。 */
+    kDSPetVoiceIdle,      /**< 等待手动发起。 */
     kDSPetVoiceListening, /**< 等待用户开口。 */
     kDSPetVoiceRecording, /**< 已检测到开口，正在收录本句。 */
     kDSPetVoiceWaiting,   /**< 录音完成，等待本轮回复。 */

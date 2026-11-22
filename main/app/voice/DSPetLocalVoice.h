@@ -13,19 +13,19 @@
 typedef enum {
     kDSPetLocalVoiceOff,      /**< 音频设备已释放，可运行诊断。 */
     kDSPetLocalVoiceStarting, /**< 正在准备模型和音频设备。 */
-    kDSPetLocalVoiceOn,       /**< 唤醒和会话可用。 */
+    kDSPetLocalVoiceOn,       /**< 语音会话可用。 */
     kDSPetLocalVoiceStopping, /**< 正在排空播放并释放音频设备。 */
 } DSPetLocalVoiceMode;
 
 /**
  * @brief 启动会话任务和共用播放服务。
- * @param[in] startOffline 为 true 时同时启动离线唤醒。
+ * @param[in] startOffline 为 true 时同时启动离线语音任务。
  * @return ESP_OK 表示任务已启动，模型和设备的准备结果由运行状态报告。
  */
 esp_err_t DSPetLocalVoiceInit(bool startOffline);
 
 /**
- * @brief 请求开启或关闭唤醒和会话。关闭后允许独立音频诊断。
+ * @brief 请求开启或关闭语音会话。关闭后允许独立音频诊断。
  * @param[in] enabled true 请求开启，false 请求释放音频设备。
  * @return ESP_OK 表示请求适用或已处于该模式，反向过渡未完成时返回状态错误。
  */
@@ -73,15 +73,16 @@ const char *DSPetLocalVoiceStateName(DSPetVoiceState state);
 /**
  * @brief 在语音设备关闭时以直连提供方启动会话。
  * @param[in] settings 输入配置，返回前已复制，停用时擦除。
+ * @param[in] startListening 为 true 时，连接就绪后直接进入免唤醒聆听。
  * @return ESP_OK 表示已发起，ESP_ERR_INVALID_STATE 表示语音任务尚未释放。
  */
-esp_err_t DSPetLocalVoiceEnableDirect(const DSPetDirectSettings *settings);
+esp_err_t DSPetLocalVoiceEnableDirect(const DSPetDirectSettings *settings, bool startListening);
 
 /** @brief 直连正在启动或持有 Wi-Fi 时返回 true。 */
 bool DSPetLocalVoiceDirectActive(void);
 
 /**
- * @brief 请求切换免唤醒。关闭时取消当前回合并回到唤醒待机。
+ * @brief 请求切换免唤醒。关闭时取消当前回合并回到手动启动的待机。
  * @param[in] enabled true 开启，false 关闭。
  * @return ESP_OK 表示已提交；直连未就绪或试图在忙碌时开启，返回 ESP_ERR_INVALID_STATE。
  * @note 仅在当前直连会话有效，语音任务异步应用。

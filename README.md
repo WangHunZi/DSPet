@@ -190,11 +190,11 @@ AEC 用例播放固定语音，请在测试期间保持安静。它先测底噪�
 
 ### 本地语音会话
 
-说「你好小智」唤醒，或短按 BOOT。动作切到聆听后正常说一句。桌宠会播固定中文答复，答完自动继续听。播报中直接开口可插话，前一次播报停止后会录完新一句。连续 8 秒未开口时返回待机。短按 BOOT 和 `dspet voice start` 都可从待机打开聆听。
+短按 BOOT 或用 `dspet voice start` 开始本地会话。动作切到聆听后正常说一句。桌宠会播固定中文答复，答完自动继续听。播报中直接开口可插话，前一次播报停止后会录完新一句。连续 8 秒未开口时返回待机。
 
-会话固件使用 `CONFIG_DSPET_LOCAL_VOICE`。首次烧录要执行上面的完整 `flash`，让 ESP-SR 的「你好小智」WakeNet9 模型写入 `model` 分区。串口 `DSPET_VOICE` 记录状态和回合编号，`DSPET_VOICE_CAPTURE` 报告采样数和是否达到 4 秒上限，`DSPET_VOICE_DRAIN` 报告取消请求到 DMA 排空的间隔。
+会话固件使用 `CONFIG_DSPET_LOCAL_VOICE`。串口 `DSPET_VOICE` 记录状态和回合编号，`DSPET_VOICE_CAPTURE` 报告采样数和是否达到 4 秒上限，`DSPET_VOICE_DRAIN` 报告取消请求到 DMA 排空的间隔。
 
-关闭其他串口终端后，用安装了 pyserial 的 Python 执行下列两个用例。第一条先安静等待超时，再自动跑双路播放诊断并恢复唤醒。第二条按提示一次唤醒、连续说三句，在第二次播报中途插话，听完第三次回复后保持安静。脚本核对串口状态，实际听感由参与测试的人确认。
+关闭其他串口终端后，用安装了 pyserial 的 Python 执行下列两个用例。第一条先安静等待超时，再自动跑双路播放诊断并恢复语音服务。第二条按提示短按一次 BOOT、连续说三句，在第二次播报中途插话，听完第三次回复后保持安静。脚本核对串口状态，实际听感由参与测试的人确认。
 
 ```sh
 python3 tests/hardware/verify_local_voice.py --port /dev/cu.usbmodem1101
@@ -258,7 +258,7 @@ python3 tests/hardware/verify_direct_conversation.py --port /dev/cu.usbmodem1101
 python3 tests/human/verify_direct_conversation_human.py --port /dev/cu.usbmodem1101
 ```
 
-`--exercise-cancel` 在自动播报中再次提交板载 PCM，验证旧流关闭、DMA 排空和新回合的识别。真人用例先说「你好小智」，接着请桌宠讲个故事。听到开始播报后等两三秒，再直接说「等一下，一加一等于几」。听桌宠回答后保持安静。串口记录 ASR 文本、首块播放、插话前后的回合编号和旧音频排空。
+`--exercise-cancel` 在自动播报中再次提交板载 PCM，验证旧流关闭、DMA 排空和新回合的识别。真人插话用例在手动直连模式下先短按 BOOT，接着请桌宠讲个故事。听到开始播报后等两三秒，再直接说「等一下，一加一等于几」。听桌宠回答后保持安静。串口记录 ASR 文本、首块播放、插话前后的回合编号和旧音频排空。
 
 屏幕在等待云端时显示一张清醒的待机画面。回复音频就绪后先刷出挥手素材的笑脸关键帧，再播声音，播完回到聆听。首帧确认最多等待 2 秒。自动直连用例检查画面切换和声音的先后。
 
@@ -266,11 +266,11 @@ python3 tests/human/verify_direct_conversation_human.py --port /dev/cu.usbmodem1
 
 ### 免唤醒直连
 
-直连进入待机后，在板载 Shell 用 `dspet voice always on` 开启。等开口时屏幕保留清醒待机画面，可以直接对桌宠说话。检测到开口后显示收音动作，串口状态变为 `recording`。`dspet voice status` 显示 `always=1`。`dspet voice always off` 停止当前回合并回到唤醒待机。此设置在重启或退出直连时清除。
+直连进入待机后，在板载 Shell 用 `dspet voice always on` 开启。等开口时屏幕保留清醒待机画面，可以直接对桌宠说话。检测到开口后显示收音动作，串口状态变为 `recording`。`dspet voice status` 显示 `always=1`。`dspet voice always off` 停止当前回合并回到手动启动的待机。串口手动开启的免唤醒随会话结束。配网固件每次联网后自动开启免唤醒。
 
 板端检测人声并分句。候选录音送到 DeepSeek ASR，DeepSeek V4 Flash 根据转写和最近问答决定是否回应。没点名的提问、招呼和日常感叹也可以接话，听不出意思的片段和明确的私人备忘可以静默。忽略时串口记录 `direct_ignored`，随后继续聆听。安静 8 秒以后仍然可以直接说话，下一轮用新的对话上下文。等待一轮网络回复时暂不接收下一句，开始播报后仍可本地插话。
 
-自动实机检查需要保持安静。以下命令先测普通直连，再验证跨过原有聆听超时后仍能提交回合、处理板载短句后继续聆听、以及关闭免唤醒后回到唤醒待机。
+自动实机检查需要保持安静。以下命令先测普通直连，再验证跨过原有聆听超时后仍能提交回合、处理板载短句后继续聆听、以及关闭免唤醒后回到手动启动的待机。
 
 ```sh
 python3 tests/hardware/verify_direct_conversation.py --port /dev/cu.usbmodem1101 \
@@ -293,7 +293,7 @@ bash scripts/idf.sh -B .cache/build-setup -D SDKCONFIG=.cache/sdkconfig.setup \
 
 1. 首次开机屏幕显示 Wi-Fi 二维码。用手机相机扫描并加入临时 `DSPet-…` 热点。
 2. 在弹出的配网页填写 2.4 GHz Wi-Fi 名称、密码和 DeepSeek API Key。如果手机没有自动弹窗，保持连接该热点，在浏览器打开屏幕上的 `http://192.168.4.1/`。
-3. 点「保存并联网」。设备把三项配置保存到 Flash 的 NVS 并重启。设备连上 Wi-Fi 并完成 SNTP 校时后进入直连唤醒待机。连接或校时失败时会重新显示配网二维码，便于更正配置。
+3. 点「保存并联网」。设备把三项配置保存到 Flash 的 NVS 并重启。设备连上 Wi-Fi 并完成 SNTP 校时后进入免唤醒聆听，直接对鲸鱼娘说话即可。连接或校时失败时会重新显示配网二维码，便于更正配置。
 4. 要恢复初始状态，在设备运行时按住 BOOT。满 5 秒立即清除配置，松手后重启并重新显示配网二维码。按住不足 1 秒后松开算短按。
 
 板载 Shell 的 `dspet setup status` 显示配网、连接中或已上线。USB 串口的 `dspet setup hotspot` 可以按需查看一次性的热点口令。已保存的 Wi-Fi 密码和 API Key 不通过串口或网页回显。此配置使用 NVS 擦除和清理已删除的数据，尚未启用 Flash 静态加密。

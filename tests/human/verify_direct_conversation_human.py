@@ -16,8 +16,8 @@ def expect_asr(board, turn):
 
 def verify(board):
     board.status()
-    print("串口已就绪。说「你好小智」，然后请她讲一个小故事。", flush=True)
-    first = board.expect(r"DSPET_VOICE event=wake_word state=listening turn=(\d+)", 150).group(1)
+    print("串口已就绪。短按 BOOT，然后请她讲一个小故事。", flush=True)
+    first = board.expect(r"DSPET_VOICE event=manual_start state=listening turn=(\d+)", 150).group(1)
     board.expect(fr"DSPET_VOICE_CAPTURE turn={first} samples=\d+", 16)
     expect_asr(board, first)
     board.expect(fr"DSPET_VOICE event=playback_started state=speaking turn={first}\b", 50)
@@ -33,13 +33,17 @@ def verify(board):
 
 
 def verify_recording_display(board):
-    board.status()
-    board.command("dspet voice always on")
-    turn = board.expect(r"DSPET_VOICE event=always_start state=listening turn=(\d+)").group(1)
-    board.expect(r"DSPET_PET_FRAME clip=idle frame=0 draw_us=\d+")
+    board.command("dspet voice status")
+    state = board.expect(r"DSPET_VOICE_STATUS mode=on state=(\w+) always=([01])").groups()
+    if state == ("idle", "0"):
+        board.command("dspet voice always on")
+        board.expect(r"DSPET_VOICE event=always_start state=listening turn=\d+")
+        board.expect(r"DSPET_PET_FRAME clip=idle frame=0 draw_us=\d+")
+    elif state != ("listening", "1"):
+        raise RuntimeError(f"等待空闲或免唤醒聆听后再开始，当前为 {state}")
     print("DSPET_HOST_READY recording_display", flush=True)
     print("串口已就绪。直接问「你今天想吃大白饭还是面条」，然后等她播完。", flush=True)
-    board.expect(fr"DSPET_VOICE event=speech_start state=recording turn={turn}\b", 90)
+    turn = board.expect(r"DSPET_VOICE event=speech_start state=recording turn=(\d+)", 90).group(1)
     board.expect(r"DSPET_PET_FRAME clip=stretch frame=0 draw_us=\d+", 5)
     board.expect(fr"DSPET_VOICE event=speech_end state=waiting turn={turn}\b", 12)
     board.expect(r"DSPET_PET_FRAME clip=idle frame=0 draw_us=\d+")

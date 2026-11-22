@@ -85,14 +85,18 @@ static void runPet(void) {
     }
     const DSPetClip *speaking = findClip("wave");
 #endif
+#ifdef CONFIG_DSPET_PROVISIONING
+    ESP_LOGI(kTag, "DSPet starts listening when setup is online");
+#else
 #ifdef CONFIG_DSPET_LOCAL_VOICE
     if (DSPetLocalVoiceGetMode() != kDSPetLocalVoiceOff) {
-        ESP_LOGI(kTag, "BOOT starts a voice session; say the wake word for hands-free use");
+        ESP_LOGI(kTag, "Tap BOOT to start a voice session");
     } else
 #endif
         if (!demoEnabled) {
         ESP_LOGI(kTag, "BOOT switches through %u clips", (unsigned) PET_CLIP_COUNT);
     }
+#endif
 
     DSPetActionState action  = {.startedUs = esp_timer_get_time()};
     uint32_t         presses = 0;

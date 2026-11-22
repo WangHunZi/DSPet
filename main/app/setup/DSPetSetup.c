@@ -49,7 +49,7 @@ esp_err_t DSPetSetupStart(void) {
         memcpy(settings.ssid, config.ssid, sizeof(config.ssid));
         memcpy(settings.password, config.password, sizeof(config.password));
         memcpy(settings.key, config.key, sizeof(config.key));
-        error = DSPetLocalVoiceEnableDirect(&settings);
+        error = DSPetLocalVoiceEnableDirect(&settings, true);
         mbedtls_platform_zeroize(&settings, sizeof(settings));
     }
     mbedtls_platform_zeroize(&config, sizeof(config));
