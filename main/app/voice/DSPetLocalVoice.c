@@ -68,11 +68,13 @@ const char *DSPetLocalVoiceStateName(DSPetVoiceState state) {
 }
 
 static void publish(const LocalVoice *voice, const char *event) {
+    const int64_t nowUs = esp_timer_get_time();
     atomic_store(&sState, voice->session.state);
-    printf("DSPET_VOICE event=%s state=%s turn=%" PRIu32 "\n",
+    printf("DSPET_VOICE event=%s state=%s turn=%" PRIu32 " at_us=%" PRId64 "\n",
            event,
            DSPetLocalVoiceStateName(voice->session.state),
-           voice->session.turnId);
+           voice->session.turnId,
+           nowUs);
 }
 
 static void beginListening(LocalVoice *voice, int64_t nowUs, int64_t delayUs, bool fromIdle) {

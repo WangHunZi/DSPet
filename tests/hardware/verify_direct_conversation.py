@@ -42,14 +42,14 @@ def verify_fixture(board):
     asr = board.expect(fr"DSPET_DIRECT_ASR turn={turn} elapsed_us=\d+ text=\S+|DSPET_VOICE event=direct_error", 80)
     if "direct_error" in asr.group():
         raise RuntimeError("板载会话在取得 ASR 结果前失败。")
-    started = False
+    playback_started_us = None
     buffered = None
     gaps = None
-    speaking_draw_us = None
+    speaking_frame_us = None
     patterns = [
         fr"DSPET_DIRECT_STREAM turn={turn} before_end=([01])",
-        fr"DSPET_VOICE event=playback_started state=speaking turn={turn}\b",
-        r"DSPET_PET_FRAME clip=wave frame=72 draw_us=\d+",
+        fr"DSPET_VOICE event=playback_started state=speaking turn={turn} at_us=\d+[\r\n]",
+        r"DSPET_PET_FRAME clip=wave frame=72 draw_us=\d+ at_us=\d+[\r\n]",
         fr"DSPET_DIRECT_END turn={turn} result=\w+ cancelled=\d+ samples=\d+ gaps=\d+",
     ]
     for _ in patterns:
@@ -57,19 +57,22 @@ def verify_fixture(board):
         if event.startswith("DSPET_DIRECT_STREAM"):
             buffered = event.endswith("before_end=0")
         elif event.startswith("DSPET_VOICE"):
-            started = True
+            playback_started_us = int(event.rsplit("at_us=", 1)[1])
         elif event.startswith("DSPET_PET_FRAME"):
-            speaking_draw_us = int(event.rsplit("draw_us=", 1)[1])
+            speaking_frame_us = int(event.rsplit("at_us=", 1)[1])
         else:
             if "result=ESP_OK cancelled=0" not in event:
                 raise RuntimeError("自动用例播放未完整结束。")
             gaps = int(event.rsplit("gaps=", 1)[1])
-    if not started or buffered is None or gaps is None or speaking_draw_us is None or (buffered and gaps != 0):
-        raise RuntimeError("串口未确认播放策略、收尾和缓冲结果。")
-    print(
-        f"DSPET_HOST_METRIC direct_fixture buffered={int(buffered)} gaps={gaps} speaking_draw_us={speaking_draw_us}",
-        flush=True,
-    )
+    if playback_started_us is None or buffered is None or gaps is None or speaking_frame_us is None:
+        raise RuntimeError("串口未确认播报起点、首帧和缓冲结果。")
+    if buffered and gaps != 0:
+        raise RuntimeError("完整缓存的播报出现了缓冲耗尽。")
+    display_lag_us = speaking_frame_us - playback_started_us
+    print(f"DSPET_HOST_METRIC direct_fixture buffered={int(buffered)} gaps={gaps} display_lag_us={display_lag_us}",
+          flush=True)
+    if display_lag_us > 350_000:
+        raise RuntimeError("笑脸首帧晚于播报超过 350 毫秒。")
     board.expect(r"DSPET_VOICE event=playback_finished state=listening turn=\d+", 40)
     board.expect(r"DSPET_PET_FRAME clip=stretch frame=0 draw_us=\d+")
     board.expect(r"DSPET_VOICE event=listen_timeout state=idle turn=\d+", 12)

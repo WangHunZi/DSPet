@@ -24,7 +24,7 @@ static const char *const kTag = "pet";
 
 #ifdef CONFIG_DSPET_LOCAL_VOICE
 // 挥手素材从第 3 秒起已进入笑脸动作，也正好落在关键帧上。
-enum { kSpeakingCueSeconds = 3 };
+enum { kSpeakingCueSeconds = 3, kWaitingPollMs = 10 };
 #endif
 
 #if defined(CONFIG_DSPET_PLAYBACK_DEMO) || defined(CONFIG_DSPET_LOCAL_VOICE)
@@ -111,10 +111,15 @@ static void runPet(void) {
         }
 #endif
 #ifdef CONFIG_DSPET_LOCAL_VOICE
-        const DSPetVoiceState voice = DSPetLocalVoiceGetState();
-        if (voice != lastVoice) {
+        const DSPetVoiceState voice        = DSPetLocalVoiceGetState();
+        const bool            voiceChanged = voice != lastVoice;
+        if (voiceChanged) {
             lastVoice      = voice;
             voiceStartedUs = esp_timer_get_time();
+        } else if (voice == kDSPetVoiceWaiting) {
+            // 等待云端时保留清醒画面，避免播报开始时还在追赶等待动画的差分帧。
+            vTaskDelay(pdMS_TO_TICKS(kWaitingPollMs));
+            continue;
         }
         if (voice != kDSPetVoiceIdle) {
             startedUs = voiceStartedUs;

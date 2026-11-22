@@ -41,7 +41,11 @@ esp_err_t DSPetPetPageDraw(const DSPetClip *clip, unsigned firstFrame, int64_t s
     }
     int64_t nowUs = esp_timer_get_time();
     if (firstDraw) {
-        printf("DSPET_PET_FRAME clip=%s frame=%u draw_us=%" PRId64 "\n", clip->name, frame.index, nowUs - startedUs);
+        printf("DSPET_PET_FRAME clip=%s frame=%u draw_us=%" PRId64 " at_us=%" PRId64 "\n",
+               clip->name,
+               frame.index,
+               nowUs - startedUs,
+               nowUs);
     }
     sDecodeTotalUs += transferStartUs - decodeStartUs;
     sTransferTotalUs += nowUs - transferStartUs;
