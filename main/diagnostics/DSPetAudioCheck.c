@@ -17,6 +17,9 @@ enum {
     kRecordSamples = kDSPetAudioDeviceSampleRateHz * kRecordSeconds,
     kReplayPeak    = 2048,
     kGainScale     = 256,
+    kTargetRms     = 512,
+    kMeterPeak     = 512,
+    kMaxGain       = 16,
 };
 
 static const char *const kTag = "audio_check";
@@ -64,9 +67,10 @@ static esp_err_t capture(int16_t *pcm, size_t sampleCount) {
 static esp_err_t replayCapture(const int16_t *pcm, size_t samples) {
     int64_t sum = 0;
     for (size_t i = 0; i < samples; ++i) sum += pcm[i];
-    const int32_t dc     = (int32_t) (sum / (int64_t) samples);
-    int32_t       peak   = 0;
-    int64_t       energy = 0;
+    const int32_t dc          = (int32_t) (sum / (int64_t) samples);
+    int32_t       peak        = 0;
+    int64_t       energy      = 0;
+    int64_t       meterEnergy = 0;
     for (size_t i = 0; i < samples; ++i) {
         int32_t sample    = pcm[i] - dc;
         int32_t magnitude = abs(sample);
@@ -74,6 +78,8 @@ static esp_err_t replayCapture(const int16_t *pcm, size_t samples) {
             peak = magnitude;
         }
         energy += (int64_t) sample * sample;
+        int32_t metered = magnitude < kMeterPeak ? magnitude : kMeterPeak;
+        meterEnergy += (int64_t) metered * metered;
     }
     ESP_LOGI(kTag,
              "Mic captured %u samples, DC=%ld AC peak=%ld RMS=%.1f (PCM16)",
@@ -86,12 +92,11 @@ static esp_err_t replayCapture(const int16_t *pcm, size_t samples) {
         return ESP_ERR_INVALID_RESPONSE;
     }
 
-    // 限制播放峰值，也限制安静环境下的增益。
-    int32_t gain = kReplayPeak * kGainScale / peak;
-    if (gain > 16 * kGainScale) {
-        gain = 16 * kGainScale;
-    }
-    ESP_LOGI(kTag, "Replaying recording with peak capped at %d/32768", kReplayPeak);
+    // 峰值会受单个尖峰影响。先用截幅 RMS 估计响度，再给实际输出独立限幅。
+    double  meteredRms = sqrt((double) meterEnergy / samples);
+    double  ratio      = meteredRms >= (double) kTargetRms / kMaxGain ? kTargetRms / meteredRms : kMaxGain;
+    int32_t gain       = (int32_t) (ratio * kGainScale);
+    ESP_LOGI(kTag, "Replaying recording: gain=%.2fx metered_rms=%.1f peak_limit=%d", ratio, meteredRms, kReplayPeak);
     int16_t chunk[kDSPetAudioDeviceBlockSamples];
     for (size_t offset = 0; offset < samples;) {
         size_t count = samples - offset;
@@ -99,7 +104,13 @@ static esp_err_t replayCapture(const int16_t *pcm, size_t samples) {
             count = kDSPetAudioDeviceBlockSamples;
         }
         for (size_t i = 0; i < count; ++i) {
-            chunk[i] = (int16_t) ((pcm[offset + i] - dc) * gain / kGainScale);
+            int32_t sample = (pcm[offset + i] - dc) * gain / kGainScale;
+            if (sample > kReplayPeak) {
+                sample = kReplayPeak;
+            } else if (sample < -kReplayPeak) {
+                sample = -kReplayPeak;
+            }
+            chunk[i] = (int16_t) sample;
         }
         ESP_RETURN_ON_ERROR(DSPetAudioDeviceWrite(chunk, count, kIoTimeoutMs), kTag, "play captured audio");
         offset += count;
