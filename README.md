@@ -261,3 +261,18 @@ python3 tests/human/verify_direct_conversation_human.py --port /dev/cu.usbmodem1
 `--exercise-cancel` 在自动播报中再次提交板载 PCM，验证旧流关闭、DMA 排空和新回合的识别。真人用例先说「你好小智」，接着请桌宠讲个故事。听到开始播报后等两三秒，再直接说「等一下，一加一等于几」。听桌宠回答后保持安静。串口记录 ASR 文本、首块播放、插话前后的回合编号和旧音频排空。
 
 录音和回声参考保持 16 kHz。ASR 上传副本转成 8 kHz，TTS 音频分块转换成 16 kHz。网络任务和播放任务通过 PSRAM 中的环形缓冲交接。接收跟得上时积累约两秒音频再开播，接收不足时等待整段完成或缓冲接近上限。发生断粮时也等待这个条件，再续播剩余音频。关闭直连用 `dspet voice disable`，再用 `dspet voice enable` 回到本地唤醒模式。重启后临时凭据需重新配置。
+
+### 免唤醒直连
+
+直连进入待机后，在板载 Shell 用 `dspet voice always on` 开启。屏幕进入聆听，可以直接对桌宠说话。`dspet voice status` 显示 `always=1`。`dspet voice always off` 停止当前回合并回到唤醒待机。此设置在重启或退出直连时清除。
+
+板端检测人声并分句。候选录音送到 DeepSeek ASR，DeepSeek V4 Flash 根据转写和最近问答决定是否回应。忽略时串口记录 `direct_ignored`，随后继续聆听。安静 8 秒以后仍然可以直接说话，下一轮用新的对话上下文。等待一轮网络回复时暂不接收下一句，开始播报后仍可本地插话。
+
+自动实机检查需要保持安静。以下命令先测普通直连，再验证跨过原有聆听超时后仍能提交回合、模型忽略板载自述、以及关闭免唤醒后回到唤醒待机。
+
+```sh
+python3 tests/hardware/verify_direct_conversation.py --port /dev/cu.usbmodem1101 \
+  --ssid 实际SSID --exercise-always --keep-enabled
+```
+
+真人检查时再次开启免唤醒，直接问「一加一等于几？只说答案」，听是否完整播报。等它重新聆听后说「我在给自己口述备忘，今晚备份照片」，确认串口有 ASR 结果和 `direct_ignored`，喇叭保持安静。
