@@ -48,13 +48,23 @@ esp_err_t DSPetNearSpeechCreate(DSPetNearSpeech **out) {
         DSPetNearSpeechDestroy(speech);
         return result;
     }
-    DSPetAecSyncInit(&speech->sync, kPlaybackToMicUs - kFilterLeadUs);
-    DSPetSpeechCaptureInit(&speech->capture, speech->recording, kRecordSamples);
+    DSPetNearSpeechReset(speech, true);
     *out = speech;
     return ESP_OK;
 }
 
-static void classify(DSPetNearSpeech *speech, const int16_t *pcm, size_t samples, bool armed, DSPetSpeechEvent *event) {
+void DSPetNearSpeechReset(DSPetNearSpeech *speech, bool restartTimeline) {
+    if (restartTimeline) {
+        DSPetAecSyncInit(&speech->sync, kPlaybackToMicUs - kFilterLeadUs);
+    }
+    DSPetSpeechCaptureInit(&speech->capture, speech->recording, kRecordSamples);
+    speech->pendingSamples = 0;
+    speech->peakRms        = 0;
+}
+
+static void classify(
+    DSPetNearSpeech *speech, const int16_t *pcm, size_t samples, DSPetNearSpeechMode mode, DSPetSpeechEvent *event) {
+    const bool armed = mode != kDSPetNearSpeechDisarmed;
     while (samples && !speech->capture.done) {
         size_t count = kDSPetSpeechFrameSamples - speech->pendingSamples;
         if (count > samples) {
@@ -66,8 +76,8 @@ static void classify(DSPetNearSpeech *speech, const int16_t *pcm, size_t samples
         samples -= count;
         if (speech->pendingSamples == kDSPetSpeechFrameSamples) {
             float               rms;
-            DSPetSpeechEvidence evidence =
-                DSPetSpeechDetectorProcess(speech->detector, speech->pending, speech->capture.active, &rms);
+            DSPetSpeechEvidence evidence = DSPetSpeechDetectorProcess(
+                speech->detector, speech->pending, speech->capture.active, mode == kDSPetNearSpeechPlaying, &rms);
             if (armed && rms > speech->peakRms) {
                 speech->peakRms = rms;
             }
@@ -80,8 +90,10 @@ static void classify(DSPetNearSpeech *speech, const int16_t *pcm, size_t samples
     }
 }
 
-esp_err_t
-DSPetNearSpeechPush(DSPetNearSpeech *speech, const DSPetAudioTapBlock *block, bool armed, DSPetSpeechEvent *event) {
+esp_err_t DSPetNearSpeechPush(DSPetNearSpeech          *speech,
+                              const DSPetAudioTapBlock *block,
+                              DSPetNearSpeechMode       mode,
+                              DSPetSpeechEvent         *event) {
     if (!speech || !block || !event) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -103,7 +115,7 @@ DSPetNearSpeechPush(DSPetNearSpeech *speech, const DSPetAudioTapBlock *block, bo
     }
     esp_err_t result = DSPetAecProcess(speech->aec, mic, reference, output, speech->aecSamples);
     if (result == ESP_OK) {
-        classify(speech, output, speech->aecSamples, armed, event);
+        classify(speech, output, speech->aecSamples, mode, event);
     }
     return result;
 }

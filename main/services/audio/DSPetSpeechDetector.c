@@ -10,15 +10,17 @@ enum {
     kSampleRateHz    = 16000,
     kFrameMs         = 20,
     kVadGain         = 8,
-    kOnsetRms        = 110,
+    kBargeOnsetRms   = 110,
+    kListenOnsetRms  = 75,
     kEnergyRms       = 52,
-    kContinuationRms = 30,
+    kContinuationRms = 42,
     kMeterPeak       = 384,
 };
 
 struct DSPetSpeechDetector {
     vad_handle_t vad;
     int16_t      amplified[kDSPetSpeechFrameSamples];
+    float        quietRms;
 };
 
 esp_err_t DSPetSpeechDetectorCreate(DSPetSpeechDetector **out) {
@@ -39,8 +41,8 @@ esp_err_t DSPetSpeechDetectorCreate(DSPetSpeechDetector **out) {
     return ESP_OK;
 }
 
-DSPetSpeechEvidence
-DSPetSpeechDetectorProcess(DSPetSpeechDetector *detector, const int16_t *pcm, bool recording, float *rms) {
+DSPetSpeechEvidence DSPetSpeechDetectorProcess(
+    DSPetSpeechDetector *detector, const int16_t *pcm, bool recording, bool playing, float *rms) {
     uint32_t squares = 0;
     for (size_t i = 0; i < kDSPetSpeechFrameSamples; ++i) {
         int32_t magnitude = abs(pcm[i]);
@@ -56,15 +58,19 @@ DSPetSpeechDetectorProcess(DSPetSpeechDetector *detector, const int16_t *pcm, bo
     }
     *rms = sqrtf((float) squares / kDSPetSpeechFrameSamples);
     if (recording) {
-        // 开口已确认，续录时保留 VAD 可能漏判的轻声和辅音。
-        return *rms >= kContinuationRms ? kDSPetSpeechVoiced : kDSPetSpeechSilent;
+        // 以上一句的安静底噪和固定下限判断停顿，避免底噪把续录拖到容量上限。
+        const float floor = fmaxf(kContinuationRms, detector->quietRms * 1.5f);
+        return *rms >= floor ? kDSPetSpeechVoiced : kDSPetSpeechSilent;
+    }
+    if (*rms < kEnergyRms) {
+        detector->quietRms += (*rms - detector->quietRms) * 0.05f;
     }
     // WebRTC 的保持状态仍持续更新，能量门限避免一个孤立敲击延长命中。
     if (vad_process(detector->vad, detector->amplified, kSampleRateHz, kFrameMs) != VAD_SPEECH ||
         squares < kEnergyRms * kEnergyRms * kDSPetSpeechFrameSamples) {
         return kDSPetSpeechSilent;
     }
-    return squares >= kOnsetRms * kOnsetRms * kDSPetSpeechFrameSamples ? kDSPetSpeechStrong : kDSPetSpeechVoiced;
+    return *rms >= (playing ? kBargeOnsetRms : kListenOnsetRms) ? kDSPetSpeechStrong : kDSPetSpeechVoiced;
 }
 
 void DSPetSpeechDetectorDestroy(DSPetSpeechDetector *detector) {

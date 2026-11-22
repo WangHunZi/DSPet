@@ -8,6 +8,13 @@
 /** @brief 单次聆听的回声消除、人声判定与录音服务。 */
 typedef struct DSPetNearSpeech DSPetNearSpeech;
 
+/** @brief 本帧的聆听条件。 */
+typedef enum {
+    kDSPetNearSpeechDisarmed,  /**< 仅对齐和预热，不产生开口事件。 */
+    kDSPetNearSpeechListening, /**< 喇叭静音，等待开口或录制。 */
+    kDSPetNearSpeechPlaying,   /**< 喇叭正在播报，使用插话门限。 */
+} DSPetNearSpeechMode;
+
 /**
  * @brief 在 PSRAM 准备同步器、预录和单句缓冲。
  * @param[out] speech 成功时返回实例，失败时置空。
@@ -16,22 +23,31 @@ typedef struct DSPetNearSpeech DSPetNearSpeech;
 esp_err_t DSPetNearSpeechCreate(DSPetNearSpeech **speech);
 
 /**
+ * @brief 开始新句，丢弃上一句的录音和预录，复用 AEC 与采样时间轴。
+ * @param[in,out] speech 已创建的实例。
+ * @param[in] restartTimeline 自上次调用以来未消费全部 DMA 块时设为 true。
+ */
+void DSPetNearSpeechReset(DSPetNearSpeech *speech, bool restartTimeline);
+
+/**
  * @brief 消费一个麦克风或播放 DMA 块，按对齐后的 PCM 产生人声事件。
  * @param[in,out] speech 同一任务持有的实例。
  * @param[in] block DMA 观测副本，调用期间借用。
- * @param[in] armed 应用是否允许产生开口事件。
+ * @param[in] mode 是否允许开口以及是否适用插话门限。
  * @param[out] event 本次输入产生的状态变化。
  * @return ESP_OK 表示接受，连续性丢失或处理失败时返回错误。
  */
-esp_err_t
-DSPetNearSpeechPush(DSPetNearSpeech *speech, const DSPetAudioTapBlock *block, bool armed, DSPetSpeechEvent *event);
+esp_err_t DSPetNearSpeechPush(DSPetNearSpeech          *speech,
+                              const DSPetAudioTapBlock *block,
+                              DSPetNearSpeechMode       mode,
+                              DSPetSpeechEvent         *event);
 
 /**
  * @brief 读取已结束的单句录音。
  * @param[in] speech 已创建的实例。
  * @param[out] sampleCount 返回样本数。
  * @param[out] preRollSamples 返回保存的预录样本数。
- * @return 已结束时返回可借用的缓冲，否则返回 NULL。缓冲有效至实例释放。
+ * @return 已结束时返回可借用的缓冲，否则返回 NULL。缓冲有效至开始新句或释放实例。
  */
 int16_t *DSPetNearSpeechRecording(DSPetNearSpeech *speech, size_t *sampleCount, size_t *preRollSamples);
 

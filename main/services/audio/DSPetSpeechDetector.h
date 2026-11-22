@@ -22,11 +22,12 @@ esp_err_t DSPetSpeechDetectorCreate(DSPetSpeechDetector **detector);
  * @param[in,out] detector 同一任务持有的实例。
  * @param[in] pcm 320 个单声道 PCM16 样本，仅在调用时借用。
  * @param[in] recording 已确认开口，使用续录能量判定。
+ * @param[in] playing 扬声器正在播报或排空，使用插话门限。
  * @param[out] rms 本帧限幅计量后的 PCM RMS。
  * @return 触发或续录使用的语音活动等级。
  */
 DSPetSpeechEvidence
-DSPetSpeechDetectorProcess(DSPetSpeechDetector *detector, const int16_t *pcm, bool recording, float *rms);
+DSPetSpeechDetectorProcess(DSPetSpeechDetector *detector, const int16_t *pcm, bool recording, bool playing, float *rms);
 
 /**
  * @brief 释放人声检测实例。

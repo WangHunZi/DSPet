@@ -31,7 +31,7 @@ static esp_err_t warmUp(DSPetNearSpeech *speech) {
         DSPetSpeechEvent   event;
         DSPetAudioTapBlock block;
         if (DSPetAudioDeviceTakeTap(&block, kTapWaitMs)) {
-            esp_err_t result = DSPetNearSpeechPush(speech, &block, false, &event);
+            esp_err_t result = DSPetNearSpeechPush(speech, &block, kDSPetNearSpeechDisarmed, &event);
             if (result != ESP_OK) {
                 return result;
             }
@@ -83,8 +83,9 @@ listenDuringPlayback(DSPetNearSpeech *speech, size_t promptSamples, DSPetBargeIn
         if (!DSPetAudioDeviceTakeTap(&block, kTapWaitMs)) {
             continue;
         }
-        DSPetSpeechEvent event;
-        esp_err_t        error = DSPetNearSpeechPush(speech, &block, armed, &event);
+        DSPetSpeechEvent          event;
+        const DSPetNearSpeechMode mode  = armed ? kDSPetNearSpeechPlaying : kDSPetNearSpeechDisarmed;
+        esp_err_t                 error = DSPetNearSpeechPush(speech, &block, mode, &event);
         if (error != ESP_OK) {
             ++result->lostBlocks;
             return error;
