@@ -3,11 +3,13 @@
 #include "driver/i2s_std.h"
 #include "esp_check.h"
 #include "esp_attr.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
-enum { kDmaBlocks = 4, kMicDataPin = GPIO_NUM_44 };
+enum { kDmaBlocks = 4, kTapQueueBlocks = 16, kMicDataPin = GPIO_NUM_44 };
 
 static const char *const kTag = "audio_device";
 static i2s_chan_handle_t sTx;
@@ -17,17 +19,51 @@ static bool sRxActive;
 static SemaphoreHandle_t sTxDone;
 static portMUX_TYPE sTxLock = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t sTxCompletedBlocks;
+static uint32_t sRxCompletedBlocks;
+static QueueHandle_t sTapQueue;
+static bool sTapActive;
 // 收发各有独立的槽缓冲，调用方可以分别从读写任务使用。
 static int32_t sTxSlots[kDSPetAudioDeviceBlockSamples][2];
 static int32_t sRxSlots[kDSPetAudioDeviceBlockSamples][2];
 
+static void IRAM_ATTR copyTapFromIsr(QueueHandle_t queue, DSPetAudioTapSource source, uint32_t index,
+                                    const i2s_event_data_t *event, BaseType_t *wake)
+{
+    if (!queue || !event->dma_buf || event->size != sizeof(sTxSlots)) {
+        return;
+    }
+    DSPetAudioTapBlock block;
+    block.dmaEofUs = esp_timer_get_time();
+    block.source = source;
+    block.blockIndex = index;
+    const int32_t (*slots)[2] = event->dma_buf;
+    for (size_t i = 0; i < kDSPetAudioDeviceBlockSamples; ++i) {
+        block.samples[i] = (int16_t)(slots[i][0] >> 16);
+    }
+    xQueueSendFromISR(queue, &block, wake);
+}
+
 static bool IRAM_ATTR txDone(i2s_chan_handle_t channel, i2s_event_data_t *event, void *context)
 {
     portENTER_CRITICAL_ISR(&sTxLock);
-    ++sTxCompletedBlocks;
+    uint32_t index = sTxCompletedBlocks++;
+    QueueHandle_t tap = sTapActive ? sTapQueue : NULL;
     portEXIT_CRITICAL_ISR(&sTxLock);
     BaseType_t wake = pdFALSE;
+    // ESP-IDF 在 on_sent 返回后清零，趁此时复制实际经过 TX DMA 的样本。
+    copyTapFromIsr(tap, kDSPetAudioTapPlayback, index, event, &wake);
     xSemaphoreGiveFromISR((SemaphoreHandle_t)context, &wake);
+    return wake == pdTRUE;
+}
+
+static bool IRAM_ATTR rxDone(i2s_chan_handle_t channel, i2s_event_data_t *event, void *context)
+{
+    portENTER_CRITICAL_ISR(&sTxLock);
+    uint32_t index = sRxCompletedBlocks++;
+    QueueHandle_t tap = sTapActive ? sTapQueue : NULL;
+    portEXIT_CRITICAL_ISR(&sTxLock);
+    BaseType_t wake = pdFALSE;
+    copyTapFromIsr(tap, kDSPetAudioTapMic, index, event, &wake);
     return wake == pdTRUE;
 }
 
@@ -62,6 +98,8 @@ static esp_err_t prepareChannels(void)
     ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(sRx, &config), kTag, "init RX");
     const i2s_event_callbacks_t callbacks = {.on_sent = txDone};
     ESP_RETURN_ON_ERROR(i2s_channel_register_event_callback(sTx, &callbacks, sTxDone), kTag, "init TX completion");
+    const i2s_event_callbacks_t captureCallbacks = {.on_recv = rxDone};
+    ESP_RETURN_ON_ERROR(i2s_channel_register_event_callback(sRx, &captureCallbacks, NULL), kTag, "init RX completion");
     return gpio_pulldown_en(kMicDataPin);
 }
 
@@ -75,6 +113,7 @@ esp_err_t DSPetAudioDeviceOpen(void)
         return ESP_ERR_NO_MEM;
     }
     sTxCompletedBlocks = 0;
+    sRxCompletedBlocks = 0;
     esp_err_t error = prepareChannels();
     if (error == ESP_OK) {
         error = i2s_channel_enable(sTx);
@@ -114,6 +153,9 @@ esp_err_t DSPetAudioDeviceStopCapture(void)
 
 esp_err_t DSPetAudioDeviceClose(void)
 {
+    portENTER_CRITICAL(&sTxLock);
+    sTapActive = false;
+    portEXIT_CRITICAL(&sTxLock);
     ESP_RETURN_ON_ERROR(DSPetAudioDeviceStopCapture(), kTag, "stop RX");
     if (sTxActive) {
         ESP_RETURN_ON_ERROR(i2s_channel_disable(sTx), kTag, "stop TX");
@@ -193,4 +235,38 @@ esp_err_t DSPetAudioDeviceDrain(uint32_t timeoutMs)
         xSemaphoreTake(sTxDone, remaining);
     }
     return ESP_OK;
+}
+
+esp_err_t DSPetAudioDeviceStartTap(void)
+{
+    if (!sTxActive || sRxActive) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    // 观测任务可能在等待队列，驱动关闭时保留这一份有界队列。
+    if (!sTapQueue) {
+        QueueHandle_t queue = xQueueCreate(kTapQueueBlocks, sizeof(DSPetAudioTapBlock));
+        if (!queue) {
+            return ESP_ERR_NO_MEM;
+        }
+        portENTER_CRITICAL(&sTxLock);
+        sTapQueue = queue;
+        portEXIT_CRITICAL(&sTxLock);
+    } else {
+        xQueueReset(sTapQueue);
+    }
+    portENTER_CRITICAL(&sTxLock);
+    sTapActive = true;
+    portEXIT_CRITICAL(&sTxLock);
+    esp_err_t error = DSPetAudioDeviceStartCapture();
+    if (error != ESP_OK) {
+        portENTER_CRITICAL(&sTxLock);
+        sTapActive = false;
+        portEXIT_CRITICAL(&sTxLock);
+    }
+    return error;
+}
+
+bool DSPetAudioDeviceTakeTap(DSPetAudioTapBlock *block, uint32_t timeoutMs)
+{
+    return block && sTapQueue && xQueueReceive(sTapQueue, block, pdMS_TO_TICKS(timeoutMs)) == pdTRUE;
 }
