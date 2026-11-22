@@ -15,7 +15,13 @@
 #include "esp_timer.h"
 #include "mbedtls/platform_util.h"
 
-enum { kHttpTimeoutMs = 12000, kReadPollMs = 250, kReplyJsonBytes = 24576, kReadBlockBytes = 768 };
+enum {
+    kHttpTimeoutMs   = 12000,
+    kUploadTimeoutMs = 35000,
+    kReadPollMs      = 250,
+    kReplyJsonBytes  = 24576,
+    kReadBlockBytes  = 768
+};
 extern const char kSystemPrompt[] asm("_binary_system_prompt_txt_start");
 
 typedef struct {
@@ -101,6 +107,10 @@ static esp_err_t postRequest(const char                *key,
                 error = ESP_ERR_INVALID_STATE;
                 break;
             }
+            if (esp_timer_get_time() - startedUs >= kUploadTimeoutMs * INT64_C(1000)) {
+                error = ESP_ERR_TIMEOUT;
+                break;
+            }
             size_t bytes = part->bytes - sent;
             if (bytes > 2048) {
                 bytes = 2048;
@@ -112,6 +122,12 @@ static esp_err_t postRequest(const char                *key,
             }
             sent += (size_t) count;
         }
+    }
+    if (error == ESP_OK && request->partCount > 1) {
+        printf("DSPET_DIRECT_UPLOAD stage=%s bytes=%zu elapsed_us=%" PRId64 "\n",
+               stage,
+               uploadBytes,
+               esp_timer_get_time() - startedUs);
     }
     if (error == ESP_OK && esp_http_client_fetch_headers(http) < 0) {
         error = ESP_ERR_INVALID_RESPONSE;
@@ -240,7 +256,7 @@ esp_err_t DSPetDeepSeekTranscribe(const char                *key,
                                   char                      *transcript,
                                   size_t                     capacityBytes,
                                   const DSPetDeepSeekCancel *cancel) {
-    if (!sampleCount || sampleCount > (UINT32_MAX - 36) / 2) {
+    if (!sampleCount || sampleCount > (8 * 1024 * 1024 - kDSPetPcmWavHeaderBytes) / sizeof(*samples)) {
         return ESP_ERR_INVALID_SIZE;
     }
     static const char lead[] = "--dspet-pcm16-wav-esp32-s3\r\n"
