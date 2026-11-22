@@ -141,17 +141,18 @@ XIAO ESP32S3 Plus 的录音内存测试使用 Octal PSRAM，选择 `Add RAM to h
 
 ## 板载串口测试
 
-默认固件在串口提供 `dspet help` 和 `dspet info`。实机测试版使用独立的构建目录和配置，不需要改日常固件的 `sdkconfig`。
+默认固件在串口提供 `dspet help` 和 `dspet info`。实机测试版使用独立的构建目录和配置，并默认启用本地会话。
 
 ```sh
 bash tools/make_playback_demo.sh
-bash scripts/idf.sh -B .cache/build-serial-aec \
-  -D SDKCONFIG=.cache/sdkconfig.serial-aec \
+bash scripts/idf.sh -B .cache/build-serial-voice \
+  -D SDKCONFIG=.cache/sdkconfig.serial-voice \
   -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;tests/sdkconfig.serial.defaults' \
   -p /dev/cu.usbmodem1101 flash monitor
 ```
 
 串口出现 `xiao>` 后输入以下命令。将 `2` 替换成录音回放用例实际给出的运行编号。
+独立音频用例需要先执行 `dspet voice disable`，等 `dspet voice status` 显示 `mode=off`。复测结束用 `dspet voice enable` 恢复唤醒。
 
 ```text
 dspet help
@@ -186,3 +187,16 @@ AEC 用例播放固定语音，请在测试期间保持安静。它先测底噪�
 
 主机测试在 `tests/software/`，板上自动用例在 `tests/hardware/`，人工回放用例在 `tests/human/`。
 主机脚本可以在串口通过 CR 发送和终端相同的命令，记录 `DSPET_TEST` 结果。
+
+### 本地语音会话
+
+说「你好小智」唤醒，或短按 BOOT。动作切到聆听后正常说一句。桌宠会播固定中文答复，答完自动继续听。播报中直接开口可插话，前一次播报停止后会录完新一句。连续 8 秒未开口时返回待机。短按 BOOT 和 `dspet voice start` 都可从待机打开聆听。
+
+会话固件使用 `CONFIG_DSPET_LOCAL_VOICE`。首次烧录要执行上面的完整 `flash`，让 ESP-SR 的「你好小智」WakeNet9 模型写入 `model` 分区。串口 `DSPET_VOICE` 记录状态和回合编号，`DSPET_VOICE_CAPTURE` 报告采样数和是否达到 4 秒上限，`DSPET_VOICE_DRAIN` 报告取消请求到 DMA 排空的间隔。
+
+关闭其他串口终端后，用安装了 pyserial 的 Python 执行下列两个用例。第一条先安静等待超时，再自动跑双路播放诊断并恢复唤醒。第二条按提示一次唤醒、连续说三句，在第二次播报中途插话，听完第三次回复后保持安静。脚本核对串口状态，实际听感由参与测试的人确认。
+
+```sh
+python3 tests/hardware/verify_local_voice.py --port /dev/cu.usbmodem1101
+python3 tests/human/verify_local_voice_session.py --port /dev/cu.usbmodem1101
+```
