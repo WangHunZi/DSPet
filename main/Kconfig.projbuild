@@ -57,3 +57,10 @@ menu "DSPet playback"
         bool "Automatically play the next action when a clip finishes"
         default y
 endmenu
+
+menu "DSPet serial shell"
+    config DSPET_SERIAL_SHELL
+        bool "Enable the DSPet USB Serial/JTAG shell"
+        depends on ESP_CONSOLE_USB_SERIAL_JTAG
+        default y
+endmenu

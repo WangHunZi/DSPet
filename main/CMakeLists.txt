@@ -55,9 +55,9 @@ idf_component_register(
          "services/input/DSPetButton.c" "services/input/DSPetButtonFilter.c"
          "services/animation/DSPetAnimation.c" "services/animation/DSPetIndexedFrame.c"
          "services/audio/DSPetPlayback.c" "ui/DSPetPetPage.c"
-    PRIV_INCLUDE_DIRS "." "app" "hardware" "services/input" "services/animation" "services/audio" "ui" "diagnostics"
+    PRIV_INCLUDE_DIRS "." "app" "hardware" "services/input" "services/animation" "services/audio" "ui" "diagnostics" "console"
                       "${CMAKE_CURRENT_BINARY_DIR}"
-    REQUIRES esp_lcd esp_driver_gpio esp_driver_spi esp_driver_i2s esp_timer esp_rom
+    REQUIRES console esp_app_format esp_lcd esp_driver_gpio esp_driver_spi esp_driver_i2s esp_timer esp_rom
     EMBED_FILES ${binaries})
 if(CONFIG_DSPET_PLAYBACK_DEMO)
     set(demo_source "${CMAKE_CURRENT_LIST_DIR}/app/DSPetPlaybackDemoAsset.S")
@@ -71,6 +71,9 @@ if(CONFIG_DSPET_PLAYBACK_DEMO)
 endif()
 if(CONFIG_DSPET_AUDIO_DUPLEX_PROBE)
     target_sources(${COMPONENT_LIB} PRIVATE "diagnostics/DSPetDuplexProbe.c")
+endif()
+if(CONFIG_DSPET_SERIAL_SHELL)
+    target_sources(${COMPONENT_LIB} PRIVATE "console/DSPetConsole.c")
 endif()
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/asset_config.h"
     "#pragma once\n#include \"DSPetClip.h\"\n${declarations}"

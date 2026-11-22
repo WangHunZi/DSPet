@@ -1,6 +1,7 @@
 #include "DSPetActionState.h"
 #include "DSPetAnimation.h"
 #include "DSPetButton.h"
+#include "DSPetConsole.h"
 #include "DSPetPanel.h"
 #include "DSPetPetPage.h"
 #include "DSPetPlaybackDemo.h"
@@ -100,5 +101,8 @@ void app_main(void)
     DSPetAudioCheckRun();
 #endif
     ESP_ERROR_CHECK(DSPetButtonStart());
+#ifdef CONFIG_DSPET_SERIAL_SHELL
+    ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetConsoleStart());
+#endif
     runPet();
 }
