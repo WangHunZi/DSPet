@@ -51,12 +51,13 @@ static void runPet(void) {
     bool demoEnabled = false;
 #ifdef CONFIG_DSPET_LOCAL_VOICE
     ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetLocalVoiceInit());
-    const DSPetClip *listening      = findClip("stretch");
-    const DSPetClip *waiting        = findClip("idle");
-    const DSPetClip *speaking       = findClip("wave");
-    const unsigned   speakingCue    = kSpeakingCueSeconds * speaking->fps;
-    DSPetVoiceState  lastVoice      = kDSPetVoiceIdle;
-    int64_t          voiceStartedUs = 0;
+    const DSPetClip *listening        = findClip("stretch");
+    const DSPetClip *waiting          = findClip("idle");
+    const DSPetClip *speaking         = findClip("wave");
+    const unsigned   speakingCue      = kSpeakingCueSeconds * speaking->fps;
+    DSPetVoiceState  lastVoice        = kDSPetVoiceIdle;
+    uint32_t         lastSpeakingTurn = 0;
+    int64_t          voiceStartedUs   = 0;
 #endif
 #ifdef CONFIG_DSPET_SERIAL_SHELL
     ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetConsoleStart());
@@ -112,10 +113,12 @@ static void runPet(void) {
 #endif
 #ifdef CONFIG_DSPET_LOCAL_VOICE
         const DSPetVoiceState voice        = DSPetLocalVoiceGetState();
-        const bool            voiceChanged = voice != lastVoice;
+        const uint32_t        speakingTurn = voice == kDSPetVoiceSpeaking ? DSPetLocalVoiceGetSpeakingTurn() : 0;
+        const bool            voiceChanged = voice != lastVoice || speakingTurn != lastSpeakingTurn;
         if (voiceChanged) {
-            lastVoice      = voice;
-            voiceStartedUs = esp_timer_get_time();
+            lastVoice        = voice;
+            lastSpeakingTurn = speakingTurn;
+            voiceStartedUs   = esp_timer_get_time();
         } else if (voice == kDSPetVoiceWaiting) {
             // 等待云端时保留清醒画面，避免播报开始时还在追赶等待动画的差分帧。
             vTaskDelay(pdMS_TO_TICKS(kWaitingPollMs));
@@ -131,6 +134,11 @@ static void runPet(void) {
 #endif
         int64_t nextFrameUs;
         ESP_ERROR_CHECK(DSPetPetPageDraw(clip, firstFrame, startedUs, &nextFrameUs));
+#ifdef CONFIG_DSPET_LOCAL_VOICE
+        if (voiceChanged && speakingTurn) {
+            DSPetLocalVoiceSpeakingFramePresented(speakingTurn);
+        }
+#endif
         // 按绝对时间调度，刷屏较慢时允许跳帧，保留原动作时长。
         int64_t    remainingUs = nextFrameUs - esp_timer_get_time();
         TickType_t delayTicks  = remainingUs > 0 ? pdMS_TO_TICKS((remainingUs + 999) / 1000) : 1;

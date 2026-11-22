@@ -24,6 +24,7 @@ enum {
     kBargeWarmupUs       = 850000,
     kDirectBargeWarmupUs = 1250000,
     kReplyDelayUs        = 250000,
+    kSpeakingFrameWaitUs = 2000000,
 };
 
 typedef struct {
@@ -50,6 +51,8 @@ static TaskHandle_t      sTask;
 static atomic_int        sMode;
 static atomic_int        sState;
 static atomic_bool       sStartRequested;
+static atomic_uint       sSpeakingTurn;
+static atomic_uint       sPresentedSpeakingTurn;
 #ifdef CONFIG_DSPET_DIRECT_TEST
 static atomic_bool         sUseDirect;
 static atomic_bool         sFixtureRequested;
@@ -69,6 +72,7 @@ const char *DSPetLocalVoiceStateName(DSPetVoiceState state) {
 
 static void publish(const LocalVoice *voice, const char *event) {
     const int64_t nowUs = esp_timer_get_time();
+    atomic_store(&sSpeakingTurn, voice->session.state == kDSPetVoiceSpeaking ? voice->session.turnId : 0);
     atomic_store(&sState, voice->session.state);
     printf("DSPET_VOICE event=%s state=%s turn=%" PRIu32 " at_us=%" PRId64 "\n",
            event,
@@ -178,8 +182,9 @@ static esp_err_t takePlaybackEvents(LocalVoice *voice) {
 }
 
 static void markReplyReady(LocalVoice *voice, uint32_t turn) {
-    voice->playbackTurnId = turn;
-    voice->armedUs        = INT64_MAX;
+    voice->armedUs    = INT64_MAX;
+    voice->deadlineUs = esp_timer_get_time() + kSpeakingFrameWaitUs;
+    atomic_store(&sPresentedSpeakingTurn, 0);
     DSPetNearSpeechReset(voice->speech, false);
     DSPetVoiceSessionApply(&voice->session, kDSPetVoiceReplyReady, turn);
     publish(voice, "reply_ready");
@@ -221,11 +226,6 @@ static esp_err_t advanceDirect(LocalVoice *voice) {
     } else if (status.complete && status.result != ESP_OK) {
         directFailed(voice, turn, status.result);
     } else if (status.ready) {
-        const esp_err_t error = DSPetPlaybackStartStream(DSPetDirectVoiceRead, voice->direct);
-        if (error != ESP_OK) {
-            return error;
-        }
-        printf("DSPET_DIRECT_STREAM turn=%" PRIu32 " before_end=%u\n", turn, status.complete ? 0u : 1u);
         markReplyReady(voice, turn);
     }
     return ESP_OK;
@@ -260,7 +260,7 @@ static void startFixture(LocalVoice *voice) {
     if (voice->session.state == kDSPetVoiceIdle) {
         startSession(voice, "fixture_start");
     }
-    if (voice->session.recording) {
+    if (voice->session.recording || (voice->session.state == kDSPetVoiceSpeaking && !voice->playbackTurnId)) {
         return;
     }
     handleSpeech(voice, kDSPetSpeechStarted, esp_timer_get_time());
@@ -271,20 +271,44 @@ static void startFixture(LocalVoice *voice) {
 }
 #endif
 
+static esp_err_t startReadyPlayback(LocalVoice *voice, int64_t nowUs) {
+    const uint32_t turn = voice->session.turnId;
+    if (atomic_load(&sPresentedSpeakingTurn) != turn) {
+        if (nowUs < voice->deadlineUs) {
+            return ESP_OK;
+        }
+        ESP_LOGW(kTag, "Speaking frame timed out for turn %" PRIu32, turn);
+    }
+    esp_err_t error;
+#ifdef CONFIG_DSPET_DIRECT_TEST
+    if (voice->direct) {
+        const bool complete = DSPetDirectVoiceGetStatus(voice->direct).complete;
+        error               = DSPetPlaybackStartStream(DSPetDirectVoiceRead, voice->direct);
+        if (error == ESP_OK) {
+            printf("DSPET_DIRECT_STREAM turn=%" PRIu32 " before_end=%u\n", turn, complete ? 0u : 1u);
+        }
+    } else
+#endif
+    {
+        error = DSPetPlaybackStart(kReplyPcmStart, kReplyPcmEnd - kReplyPcmStart);
+    }
+    if (error == ESP_OK) {
+        voice->playbackTurnId = turn;
+    }
+    return error;
+}
+
 static esp_err_t advanceSession(LocalVoice *voice, int64_t nowUs) {
+    if (voice->session.state == kDSPetVoiceSpeaking && !voice->playbackTurnId) {
+        return startReadyPlayback(voice, nowUs);
+    }
 #ifdef CONFIG_DSPET_DIRECT_TEST
     if (voice->direct && voice->session.state == kDSPetVoiceWaiting) {
         return voice->playbackTurnId ? ESP_OK : advanceDirect(voice);
     }
 #endif
     if (voice->session.state == kDSPetVoiceWaiting && !voice->playbackTurnId && nowUs >= voice->deadlineUs) {
-        // 本地回复使用固定中文；就绪和完成事件都携带发起播放时的回合编号。
-        const uint32_t turn  = voice->session.turnId;
-        esp_err_t      error = DSPetPlaybackStart(kReplyPcmStart, kReplyPcmEnd - kReplyPcmStart);
-        if (error != ESP_OK) {
-            return error;
-        }
-        markReplyReady(voice, turn);
+        markReplyReady(voice, voice->session.turnId);
     } else if (voice->session.state == kDSPetVoiceListening && !voice->session.recording &&
                nowUs >= voice->deadlineUs) {
 #ifdef CONFIG_DSPET_DIRECT_TEST
@@ -314,7 +338,8 @@ static esp_err_t processBlock(LocalVoice *voice, const DSPetAudioTapBlock *block
         mode = voice->playbackTurnId ? kDSPetNearSpeechPlaying : kDSPetNearSpeechListening;
     }
 #ifdef CONFIG_DSPET_DIRECT_TEST
-    if (voice->direct && voice->session.state == kDSPetVoiceWaiting && !voice->playbackTurnId) {
+    if (voice->direct && !voice->playbackTurnId &&
+        (voice->session.state == kDSPetVoiceWaiting || voice->session.state == kDSPetVoiceSpeaking)) {
         mode = kDSPetNearSpeechAlignOnly;
     }
 #endif
@@ -484,6 +509,10 @@ esp_err_t DSPetLocalVoiceStart(void) {
 DSPetLocalVoiceMode DSPetLocalVoiceGetMode(void) { return atomic_load(&sMode); }
 
 DSPetVoiceState DSPetLocalVoiceGetState(void) { return atomic_load(&sState); }
+
+uint32_t DSPetLocalVoiceGetSpeakingTurn(void) { return atomic_load(&sSpeakingTurn); }
+
+void DSPetLocalVoiceSpeakingFramePresented(uint32_t turnId) { atomic_store(&sPresentedSpeakingTurn, turnId); }
 
 #ifdef CONFIG_DSPET_DIRECT_TEST
 esp_err_t DSPetLocalVoiceEnableDirect(const DSPetDirectSettings *settings) {

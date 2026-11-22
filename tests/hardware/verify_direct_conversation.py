@@ -71,8 +71,8 @@ def verify_fixture(board):
     display_lag_us = speaking_frame_us - playback_started_us
     print(f"DSPET_HOST_METRIC direct_fixture buffered={int(buffered)} gaps={gaps} display_lag_us={display_lag_us}",
           flush=True)
-    if display_lag_us > 350_000:
-        raise RuntimeError("笑脸首帧晚于播报超过 350 毫秒。")
+    if display_lag_us > 0:
+        raise RuntimeError("播报早于笑脸首帧刷完。")
     board.expect(r"DSPET_VOICE event=playback_finished state=listening turn=\d+", 40)
     board.expect(r"DSPET_PET_FRAME clip=stretch frame=0 draw_us=\d+")
     board.expect(r"DSPET_VOICE event=listen_timeout state=idle turn=\d+", 12)

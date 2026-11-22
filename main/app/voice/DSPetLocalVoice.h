@@ -49,6 +49,19 @@ DSPetLocalVoiceMode DSPetLocalVoiceGetMode(void);
 DSPetVoiceState DSPetLocalVoiceGetState(void);
 
 /**
+ * @brief 读取当前播报画面所对应的回合。
+ * @return 非零播报回合编号，其余状态返回零。
+ */
+uint32_t DSPetLocalVoiceGetSpeakingTurn(void);
+
+/**
+ * @brief 通知语音任务，该回合的播报表情首帧已经完成面板传输。
+ * @param[in] turnId 开始绘制时读取的非零回合编号。
+ * @note 由显示任务调用。旧回合的通知不能启动当前回合。
+ */
+void DSPetLocalVoiceSpeakingFramePresented(uint32_t turnId);
+
+/**
  * @brief 获取会话状态的日志名称。
  * @param[in] state 会话状态。
  * @return 生命周期内有效的英文状态名。
