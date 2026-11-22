@@ -23,6 +23,17 @@ typedef struct {
 } DSPetPlaybackEvent;
 
 /**
+ * @brief 由播放任务读取一块 16 kHz 单声道 PCM16。
+ * @param[in,out] context 直到播放终态有效的源状态。
+ * @param[out] samples PCM 输出缓冲。
+ * @param[in] capacitySamples 缓冲容量，单位为样本。
+ * @param[out] sampleCount 成功时写入本次样本数，零表示流结束。
+ * @return ESP_OK 表示收到数据或流结束，ESP_ERR_TIMEOUT 表示暂时无数据，其余错误终止播放。
+ * @note 每次等待不得超过 10 ms，以便播放任务及时处理取消。
+ */
+typedef esp_err_t (*DSPetPlaybackRead)(void *context, int16_t *samples, size_t capacitySamples, size_t *sampleCount);
+
+/**
  * @brief 启动 PCM 播放任务。
  * @return ESP_OK 表示任务就绪，其余返回初始化错误。
  * @note 同一调用任务使用公开接口。设备由调用方管理，初始化任务时可以尚未打开。
@@ -37,6 +48,14 @@ esp_err_t DSPetPlaybackInit(void);
  * @note 提交前打开音频设备，取到终态后才可关闭。
  */
 esp_err_t DSPetPlaybackStart(const int16_t *samples, size_t sampleCount);
+
+/**
+ * @brief 提交一个分块读取的音频源，复用相同的 DMA 播放与排空事件。
+ * @param[in] read 非空的流读取回调。
+ * @param[in,out] context 传给回调，保持有效直到收到终态。
+ * @return ESP_OK 表示已入队，其余为参数或播放忙错误。
+ */
+esp_err_t DSPetPlaybackStartStream(DSPetPlaybackRead read, void *context);
 
 /**
  * @brief 请求取消当前播放。

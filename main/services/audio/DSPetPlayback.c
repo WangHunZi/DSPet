@@ -11,8 +11,10 @@
 enum { kWriteTimeoutMs = 40, kDrainTimeoutMs = 120 };
 
 typedef struct {
-    const int16_t *samples;
-    size_t         sampleCount;
+    const int16_t    *samples;
+    size_t            sampleCount;
+    DSPetPlaybackRead read;
+    void             *context;
 } PlaybackRequest;
 
 static QueueHandle_t sRequests;
@@ -32,14 +34,38 @@ static void playRequest(const PlaybackRequest *request) {
         publishEvent(kDSPetPlaybackEventCancelled, ESP_OK);
         return;
     }
-    esp_err_t writeResult = ESP_OK;
-    bool      wrote       = false;
-    for (size_t offset = 0; offset < request->sampleCount && !atomic_load(&sCancelRequested);) {
-        size_t count = request->sampleCount - offset;
-        if (count > kDSPetAudioDeviceBlockSamples) {
-            count = kDSPetAudioDeviceBlockSamples;
+    esp_err_t writeResult    = ESP_OK;
+    bool      wrote          = false;
+    bool      writeAttempted = false;
+    size_t    offset         = 0;
+    int16_t   buffer[kDSPetAudioDeviceBlockSamples];
+    while (!atomic_load(&sCancelRequested)) {
+        size_t         count;
+        const int16_t *samples;
+        if (request->read) {
+            writeResult = request->read(request->context, buffer, kDSPetAudioDeviceBlockSamples, &count);
+            if (writeResult == ESP_ERR_TIMEOUT) {
+                writeResult = ESP_OK;
+                continue;
+            }
+            if (writeResult != ESP_OK || !count || atomic_load(&sCancelRequested)) {
+                break;
+            }
+            samples = buffer;
+        } else {
+            count = request->sampleCount - offset;
+            if (!count) {
+                break;
+            }
+            if (count > kDSPetAudioDeviceBlockSamples) {
+                count = kDSPetAudioDeviceBlockSamples;
+            }
+            samples = request->samples + offset;
+            offset += count;
         }
-        writeResult = DSPetAudioDeviceWrite(request->samples + offset, count, kWriteTimeoutMs);
+
+        writeAttempted = true;
+        writeResult    = DSPetAudioDeviceWrite(samples, count, kWriteTimeoutMs);
         if (writeResult != ESP_OK) {
             break;
         }
@@ -47,11 +73,10 @@ static void playRequest(const PlaybackRequest *request) {
             publishEvent(kDSPetPlaybackEventQueued, ESP_OK);
             wrote = true;
         }
-        offset += count;
     }
 
-    // 单个写操作失败时也可能已写入部分数据。
-    if (wrote || writeResult != ESP_OK) {
+    // 即使写操作报错，也可能已将部分样本送入 DMA。
+    if (writeAttempted) {
         esp_err_t drainResult = DSPetAudioDeviceDrain(kDrainTimeoutMs);
         if (drainResult != ESP_OK) {
             publishEvent(kDSPetPlaybackEventFailed, drainResult);
@@ -96,20 +121,32 @@ esp_err_t DSPetPlaybackInit(void) {
     return ESP_ERR_NO_MEM;
 }
 
-esp_err_t DSPetPlaybackStart(const int16_t *samples, size_t sampleCount) {
-    if (!samples || !sampleCount) {
-        return ESP_ERR_INVALID_ARG;
-    }
+static esp_err_t enqueuePlayback(const PlaybackRequest *request) {
     if (!sRequests || sBusy) {
         return ESP_ERR_INVALID_STATE;
     }
-    const PlaybackRequest request = {.samples = samples, .sampleCount = sampleCount};
     atomic_store(&sCancelRequested, false);
-    if (xQueueSend(sRequests, &request, 0) != pdTRUE) {
+    if (xQueueSend(sRequests, request, 0) != pdTRUE) {
         return ESP_ERR_INVALID_STATE;
     }
     sBusy = true;
     return ESP_OK;
+}
+
+esp_err_t DSPetPlaybackStart(const int16_t *samples, size_t sampleCount) {
+    if (!samples || !sampleCount) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const PlaybackRequest request = {.samples = samples, .sampleCount = sampleCount};
+    return enqueuePlayback(&request);
+}
+
+esp_err_t DSPetPlaybackStartStream(DSPetPlaybackRead read, void *context) {
+    if (!read) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const PlaybackRequest request = {.read = read, .context = context};
+    return enqueuePlayback(&request);
 }
 
 bool DSPetPlaybackCancel(void) {

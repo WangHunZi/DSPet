@@ -78,30 +78,25 @@ esp_err_t DSPetDirectTestScan(void) {
 
 typedef struct {
     DSPetPcm24kTo16k converter;
-    bool             haveLowByte;
-    uint8_t          lowByte;
     int16_t         *pcm;
     size_t           samples;
 } AudioPreview;
 
 static esp_err_t consumePcm(const uint8_t *bytes, size_t count, void *context) {
     AudioPreview *output = context;
-    for (size_t i = 0; i < count; ++i) {
-        if (!output->haveLowByte) {
-            output->lowByte     = bytes[i];
-            output->haveLowByte = true;
-            continue;
-        }
-        const int16_t sample = (int16_t) ((uint16_t) bytes[i] << 8 | output->lowByte);
-        output->haveLowByte  = false;
-        int16_t      pair[2];
-        const size_t available = DSPetPcm24kTo16kPush(&output->converter, sample, pair);
-        if (available > kReplySamples - output->samples) {
+    enum { kDecodeBytes = 256 };
+    while (count) {
+        int16_t      block[kDecodeBytes / 2 + 2];
+        const size_t take    = count > kDecodeBytes ? kDecodeBytes : count;
+        const size_t samples = DSPetPcm24kTo16kDecode(&output->converter, bytes, take, block);
+        if (samples > kReplySamples - output->samples) {
             return ESP_ERR_INVALID_SIZE;
         }
-        for (size_t index = 0; index < available; ++index) {
-            output->pcm[output->samples++] = pair[index] / kSpeakerAttenuation;
+        for (size_t i = 0; i < samples; ++i) {
+            output->pcm[output->samples++] = block[i] / kSpeakerAttenuation;
         }
+        bytes += take;
+        count -= take;
     }
     return ESP_OK;
 }
@@ -150,7 +145,7 @@ static esp_err_t playReply(const char *reply, int64_t startedUs) {
     // 固定问题用例先收完整音频，再开 I²S，以单独验证网络与喇叭。
     esp_err_t error = DSPetDeepSeekSpeak(sSettings.key, reply, consumePcm, &audio, NULL);
     if (error == ESP_OK) {
-        error = audio.haveLowByte || !audio.samples ? ESP_ERR_INVALID_RESPONSE : playPcm(&audio, startedUs);
+        error = audio.converter.haveLowByte || !audio.samples ? ESP_ERR_INVALID_RESPONSE : playPcm(&audio, startedUs);
     }
     free(audio.pcm);
     return error;

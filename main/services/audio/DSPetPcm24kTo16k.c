@@ -11,3 +11,18 @@ size_t DSPetPcm24kTo16kPush(DSPetPcm24kTo16k *state, int16_t sample, int16_t out
     state->used          = 0;
     return 2;
 }
+
+size_t DSPetPcm24kTo16kDecode(DSPetPcm24kTo16k *state, const uint8_t *bytes, size_t byteCount, int16_t *output) {
+    size_t count = 0;
+    for (size_t i = 0; i < byteCount; ++i) {
+        if (!state->haveLowByte) {
+            state->lowByte     = bytes[i];
+            state->haveLowByte = true;
+        } else {
+            const int16_t sample = (int16_t) ((uint16_t) bytes[i] << 8 | state->lowByte);
+            state->haveLowByte   = false;
+            count += DSPetPcm24kTo16kPush(state, sample, output + count);
+        }
+    }
+    return count;
+}
