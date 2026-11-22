@@ -148,7 +148,7 @@ static esp_err_t playReply(const char *reply, int64_t startedUs) {
     }
     printHeap("before_tts");
     // 固定问题用例先收完整音频，再开 I²S，以单独验证网络与喇叭。
-    esp_err_t error = DSPetDeepSeekSpeak(sSettings.key, reply, consumePcm, &audio);
+    esp_err_t error = DSPetDeepSeekSpeak(sSettings.key, reply, consumePcm, &audio, NULL);
     if (error == ESP_OK) {
         error = audio.haveLowByte || !audio.samples ? ESP_ERR_INVALID_RESPONSE : playPcm(&audio, startedUs);
     }
@@ -177,7 +177,7 @@ esp_err_t DSPetDirectTestRun(void) {
     if (error == ESP_OK) {
         const char *question =
             sSettings.shortReply ? "一加一等于几？只回答一个汉字。" : "海水为什么是咸的？用一句话回答。";
-        error = DSPetDeepSeekReply(sSettings.key, question, reply, sizeof(reply));
+        error = DSPetDeepSeekReply(sSettings.key, question, NULL, reply, sizeof(reply), NULL);
     }
     if (error == ESP_OK) {
         printf("DSPET_DIRECT_REPLY %s\n", reply);

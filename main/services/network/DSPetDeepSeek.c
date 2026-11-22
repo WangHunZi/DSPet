@@ -7,6 +7,7 @@
 #include <string.h>
 #include <strings.h>
 
+#include "DSPetPcmWav.h"
 #include "cJSON.h"
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
@@ -14,7 +15,7 @@
 #include "esp_timer.h"
 #include "mbedtls/platform_util.h"
 
-enum { kHttpTimeoutMs = 12000, kReplyJsonBytes = 24576, kReadBlockBytes = 768 };
+enum { kHttpTimeoutMs = 12000, kReadPollMs = 250, kReplyJsonBytes = 24576, kReadBlockBytes = 768 };
 extern const char kSystemPrompt[] asm("_binary_system_prompt_txt_start");
 
 typedef struct {
@@ -30,20 +31,38 @@ static esp_err_t saveContentType(esp_http_client_event_t *event) {
     return ESP_OK;
 }
 
-static esp_err_t postJson(const char            *key,
-                          const char            *url,
-                          const char            *stage,
-                          const cJSON           *body,
-                          bool                   expectPcm,
-                          DSPetDeepSeekAudioSink sink,
-                          void                  *context) {
-    char *json = cJSON_PrintUnformatted(body);
-    if (!json) {
-        return ESP_ERR_NO_MEM;
+typedef struct {
+    const void *data;
+    size_t      bytes;
+} RequestPart;
+
+typedef struct {
+    const char        *url;
+    const char        *stage;
+    const char        *contentType;
+    const RequestPart *parts;
+    size_t             partCount;
+    bool               expectPcm;
+} Request;
+
+static bool cancelled(const DSPetDeepSeekCancel *cancel) { return cancel && cancel->requested(cancel->context); }
+
+static esp_err_t postRequest(const char                *key,
+                             const Request             *request,
+                             DSPetDeepSeekAudioSink     sink,
+                             void                      *context,
+                             const DSPetDeepSeekCancel *cancel) {
+    if (cancelled(cancel)) {
+        return ESP_ERR_INVALID_STATE;
     }
+    size_t uploadBytes = 0;
+    for (size_t i = 0; i < request->partCount; ++i) {
+        uploadBytes += request->parts[i].bytes;
+    }
+    const char              *stage   = request->stage;
     ResponseHeaders          headers = {0};
     esp_http_client_config_t config  = {
-        .url                   = url,
+        .url                   = request->url,
         .method                = HTTP_METHOD_POST,
         .crt_bundle_attach     = esp_crt_bundle_attach,
         .timeout_ms            = kHttpTimeoutMs,
@@ -53,7 +72,6 @@ static esp_err_t postJson(const char            *key,
     };
     esp_http_client_handle_t http = esp_http_client_init(&config);
     if (!http) {
-        cJSON_free(json);
         return ESP_ERR_NO_MEM;
     }
     char authorization[sizeof("Bearer ") + kDSPetDeepSeekKeyBytes];
@@ -61,14 +79,14 @@ static esp_err_t postJson(const char            *key,
     esp_err_t error = esp_http_client_set_header(http, "Authorization", authorization);
     mbedtls_platform_zeroize(authorization, sizeof(authorization));
     if (error == ESP_OK) {
-        error = esp_http_client_set_header(http, "Content-Type", "application/json");
+        error = esp_http_client_set_header(http, "Content-Type", request->contentType);
     }
     if (error == ESP_OK) {
         error = esp_http_client_set_header(http, "Connection", "close");
     }
     const int64_t startedUs = esp_timer_get_time();
     if (error == ESP_OK) {
-        error = esp_http_client_open(http, strlen(json));
+        error = esp_http_client_open(http, uploadBytes);
         printf("DSPET_DIRECT_TLS stage=%s result=%s elapsed_us=%" PRId64 " free_internal=%zu largest_internal=%zu\n",
                stage,
                esp_err_to_name(error),
@@ -76,10 +94,25 @@ static esp_err_t postJson(const char            *key,
                heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
                heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     }
-    if (error == ESP_OK && esp_http_client_write(http, json, strlen(json)) != (int) strlen(json)) {
-        error = ESP_FAIL;
+    for (size_t i = 0; error == ESP_OK && i < request->partCount; ++i) {
+        const RequestPart *part = &request->parts[i];
+        for (size_t sent = 0; sent < part->bytes;) {
+            if (cancelled(cancel)) {
+                error = ESP_ERR_INVALID_STATE;
+                break;
+            }
+            size_t bytes = part->bytes - sent;
+            if (bytes > 2048) {
+                bytes = 2048;
+            }
+            int count = esp_http_client_write(http, (const char *) part->data + sent, bytes);
+            if (count <= 0) {
+                error = ESP_FAIL;
+                break;
+            }
+            sent += (size_t) count;
+        }
     }
-    cJSON_free(json);
     if (error == ESP_OK && esp_http_client_fetch_headers(http) < 0) {
         error = ESP_ERR_INVALID_RESPONSE;
     }
@@ -89,15 +122,26 @@ static esp_err_t postJson(const char            *key,
                stage,
                status,
                esp_timer_get_time() - startedUs);
-        if (status != 200 || (expectPcm && !headers.pcm)) {
+        if (status != 200 || (request->expectPcm && !headers.pcm)) {
             error = ESP_ERR_INVALID_RESPONSE;
         }
     }
 
-    size_t  bytes = 0;
+    if (error == ESP_OK && cancel) {
+        error = esp_http_client_set_timeout_ms(http, kReadPollMs);
+    }
+    int64_t lastDataUs = esp_timer_get_time();
+    size_t  bytes      = 0;
     uint8_t block[kReadBlockBytes];
     while (error == ESP_OK) {
+        if (cancelled(cancel)) {
+            error = ESP_ERR_INVALID_STATE;
+            break;
+        }
         const int count = esp_http_client_read(http, (char *) block, sizeof(block));
+        if (count == -ESP_ERR_HTTP_EAGAIN && esp_timer_get_time() - lastDataUs < kHttpTimeoutMs * INT64_C(1000)) {
+            continue;
+        }
         if (count <= 0) {
             if (count < 0 || !bytes || !esp_http_client_is_complete_data_received(http)) {
                 error = ESP_ERR_INVALID_RESPONSE;
@@ -109,7 +153,8 @@ static esp_err_t postJson(const char            *key,
                 "DSPET_DIRECT_FIRST_BYTE stage=%s elapsed_us=%" PRId64 "\n", stage, esp_timer_get_time() - startedUs);
         }
         bytes += (size_t) count;
-        error = sink(block, (size_t) count, context);
+        error      = cancelled(cancel) ? ESP_ERR_INVALID_STATE : sink(block, (size_t) count, context);
+        lastDataUs = esp_timer_get_time();
     }
     printf("DSPET_DIRECT_TRANSFER stage=%s bytes=%zu result=%s elapsed_us=%" PRId64 "\n",
            stage,
@@ -117,6 +162,25 @@ static esp_err_t postJson(const char            *key,
            esp_err_to_name(error),
            esp_timer_get_time() - startedUs);
     esp_http_client_cleanup(http);
+    return error;
+}
+
+static esp_err_t postJson(const char                *key,
+                          const char                *url,
+                          const char                *stage,
+                          const cJSON               *body,
+                          bool                       expectPcm,
+                          DSPetDeepSeekAudioSink     sink,
+                          void                      *context,
+                          const DSPetDeepSeekCancel *cancel) {
+    char *json = cJSON_PrintUnformatted(body);
+    if (!json) {
+        return ESP_ERR_NO_MEM;
+    }
+    const RequestPart part    = {json, strlen(json)};
+    const Request     request = {url, stage, "application/json", &part, 1, expectPcm};
+    esp_err_t         error   = postRequest(key, &request, sink, context, cancel);
+    cJSON_free(json);
     return error;
 }
 
@@ -170,7 +234,70 @@ static esp_err_t parseReply(JsonResponse *response, char *reply, size_t capacity
     return error;
 }
 
-esp_err_t DSPetDeepSeekReply(const char *key, const char *question, char *reply, size_t capacityBytes) {
+esp_err_t DSPetDeepSeekTranscribe(const char                *key,
+                                  const int16_t             *samples,
+                                  size_t                     sampleCount,
+                                  char                      *transcript,
+                                  size_t                     capacityBytes,
+                                  const DSPetDeepSeekCancel *cancel) {
+    if (!sampleCount || sampleCount > (UINT32_MAX - 36) / 2) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    static const char lead[] = "--dspet-pcm16-wav-esp32-s3\r\n"
+                               "Content-Disposition: form-data; name=\"file\"; filename=\"speech.wav\"\r\n"
+                               "Content-Type: audio/wav\r\n\r\n";
+    static const char tail[] = "\r\n--dspet-pcm16-wav-esp32-s3--\r\n";
+    uint8_t           wav[kDSPetPcmWavHeaderBytes];
+    DSPetPcmWavHeader(wav, 16000, sampleCount);
+    const RequestPart parts[] = {
+        {lead, sizeof(lead) - 1},
+        {wav, sizeof(wav)},
+        {samples, sampleCount * sizeof(*samples)},
+        {tail, sizeof(tail) - 1},
+    };
+    const Request request  = {"https://api.deepseek.com/v1/tools/asr",
+                              "asr",
+                              "multipart/form-data; boundary=dspet-pcm16-wav-esp32-s3",
+                              parts,
+                              sizeof(parts) / sizeof(parts[0]),
+                              false};
+    JsonResponse  response = {.data = heap_caps_malloc(kReplyJsonBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)};
+    if (!response.data) {
+        return ESP_ERR_NO_MEM;
+    }
+    esp_err_t error = postRequest(key, &request, appendJson, &response, cancel);
+    if (error == ESP_OK) {
+        response.data[response.size] = '\0';
+        cJSON      *data             = cJSON_ParseWithLength(response.data, response.size + 1);
+        const char *text             = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(data, "text"));
+        if (!text) {
+            error = ESP_ERR_INVALID_RESPONSE;
+        } else if (!*text || strspn(text, " \t\r\n") == strlen(text)) {
+            error = ESP_ERR_NOT_FOUND;
+        } else if (strlen(text) >= capacityBytes) {
+            error = ESP_ERR_INVALID_SIZE;
+        } else {
+            memcpy(transcript, text, strlen(text) + 1);
+        }
+        cJSON_Delete(data);
+    }
+    free(response.data);
+    return error;
+}
+
+static bool addHistory(cJSON *messages, const DSPetDeepSeekHistory *history) {
+    return !history ||
+           (addMessage(messages, "user", history->question) && addMessage(messages, "assistant", history->reply) &&
+            (!history->interrupted ||
+             addMessage(messages, "system", "上一条回复的播报被打断或中途停止，用户可能只听到部分内容。")));
+}
+
+esp_err_t DSPetDeepSeekReply(const char                 *key,
+                             const char                 *question,
+                             const DSPetDeepSeekHistory *history,
+                             char                       *reply,
+                             size_t                      capacityBytes,
+                             const DSPetDeepSeekCancel  *cancel) {
     cJSON *body = cJSON_CreateObject();
     if (!body) {
         return ESP_ERR_NO_MEM;
@@ -180,11 +307,12 @@ esp_err_t DSPetDeepSeekReply(const char *key, const char *question, char *reply,
     esp_err_t    error    = ESP_ERR_NO_MEM;
     if (messages && cJSON_AddStringToObject(body, "model", "deepseek-flash") &&
         cJSON_AddStringToObject(body, "reasoning_effort", "low") && cJSON_AddNumberToObject(body, "max_tokens", 512) &&
-        addMessage(messages, "system", kSystemPrompt) && addMessage(messages, "user", question)) {
+        addMessage(messages, "system", kSystemPrompt) && addHistory(messages, history) &&
+        addMessage(messages, "user", question)) {
         response.data = heap_caps_malloc(kReplyJsonBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (response.data) {
-            error =
-                postJson(key, "https://api.deepseek.com/chat/completions", "chat", body, false, appendJson, &response);
+            error = postJson(
+                key, "https://api.deepseek.com/chat/completions", "chat", body, false, appendJson, &response, cancel);
             if (error == ESP_OK) {
                 error = parseReply(&response, reply, capacityBytes);
             }
@@ -195,7 +323,8 @@ esp_err_t DSPetDeepSeekReply(const char *key, const char *question, char *reply,
     return error;
 }
 
-esp_err_t DSPetDeepSeekSpeak(const char *key, const char *text, DSPetDeepSeekAudioSink sink, void *context) {
+esp_err_t DSPetDeepSeekSpeak(
+    const char *key, const char *text, DSPetDeepSeekAudioSink sink, void *context, const DSPetDeepSeekCancel *cancel) {
     cJSON *body = cJSON_CreateObject();
     if (!body) {
         return ESP_ERR_NO_MEM;
@@ -203,7 +332,7 @@ esp_err_t DSPetDeepSeekSpeak(const char *key, const char *text, DSPetDeepSeekAud
     esp_err_t error = ESP_ERR_NO_MEM;
     if (cJSON_AddStringToObject(body, "text", text) && cJSON_AddStringToObject(body, "voice_id", "stella") &&
         cJSON_AddStringToObject(body, "format", "pcm")) {
-        error = postJson(key, "https://api.deepseek.com/v1/tools/tts", "tts", body, true, sink, context);
+        error = postJson(key, "https://api.deepseek.com/v1/tools/tts", "tts", body, true, sink, context, cancel);
     }
     cJSON_Delete(body);
     return error;

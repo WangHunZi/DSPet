@@ -112,7 +112,7 @@ if(CONFIG_DSPET_DIRECT_TEST)
         message(FATAL_ERROR "DSPet direct diagnostics require console tests and heap-accessible PSRAM")
     endif()
     target_sources(${COMPONENT_LIB} PRIVATE "services/network/DSPetWifi.c" "services/network/DSPetDeepSeek.c"
-                   "services/audio/DSPetPcm24kTo16k.c" "../tests/hardware/DSPetDirectTest.c")
+                   "services/audio/DSPetPcm24kTo16k.c" "services/audio/DSPetPcmWav.c" "../tests/hardware/DSPetDirectTest.c")
     target_include_directories(${COMPONENT_LIB} PRIVATE "services/network")
     target_add_binary_data(${COMPONENT_LIB} "${PROJECT_DIR}/gateway/system_prompt.txt" TEXT)
 endif()
