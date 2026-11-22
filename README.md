@@ -123,3 +123,18 @@ I²S 采用 16 kHz、Philips 格式、双声道 32 位槽，录音取左槽。
 `Finished; DMA drained` 和 `Cancelled; DMA drained` 分别对应自然结束和取消完成。
 停播延迟日志从应用发出取消请求算到 DMA 排空确认，实际停声仍需要听喇叭验证。
 演示开关默认关闭。关闭时 BOOT 用于切换动画。
+
+## 双路音频采样诊断
+
+在同一 `DSPet audio` 菜单打开 `Measure microphone and playback DMA timing in the speech demo`。
+XIAO ESP32S3 Plus 的录音内存测试使用 Octal PSRAM，选择 `Add RAM to heap_caps allocator`。
+麦克风左槽和实际经过 TX DMA 的 PCM 都以 16 kHz、每块 128 样本记录在板端有界队列。
+每两秒输出块数、丢块、块间隔、DMA 完成时间的相位差、PCM 峰值和最低内部堆。
+串口只输出统计信息。
+
+等动画开始后，先在待机时对麦克风说话，确认 `peak_mic/ref` 的参考端仍为 0。
+短按 BOOT 开始播报，在她说话时再对麦克风说一句话，确认两路同时有数据。
+再按 BOOT 停播，等 `TX reference silent`。重播一遍并等出现 `Finished; DMA drained`。
+`phase_us` 是两路 DMA 完成节拍的相位估计，做回声消除时还需校准实际路径延迟。
+也可以打开 `Automatically exercise playback, cancellation and normal completion once`。
+每次开机自检后会执行一轮自动验证，按 BOOT 可转为手动操作。

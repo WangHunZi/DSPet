@@ -42,6 +42,14 @@ menu "DSPet audio"
         help
             Enable simultaneous I2S capture and report block statistics.
             Microphone and reference samples stay inside the device.
+
+    config DSPET_DUPLEX_AUTO_TEST
+        bool "Automatically exercise playback, cancellation and normal completion once"
+        depends on DSPET_AUDIO_DUPLEX_PROBE
+        default n
+        help
+            Run the speech demo sequence once after boot. A BOOT press
+            cancels the automatic sequence and toggles playback manually.
 endmenu
 
 menu "DSPet playback"

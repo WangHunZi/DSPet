@@ -17,6 +17,11 @@ static bool sPending;
 static bool sSpeaking;
 static int64_t sStartedUs;
 static int64_t sCancelUs;
+#ifdef CONFIG_DSPET_DUPLEX_AUTO_TEST
+enum { kAutoTestDone = 3 };
+static unsigned sAutoTestStep;
+static int64_t sAutoTestDueUs;
+#endif
 
 esp_err_t DSPetPlaybackDemoInit(void)
 {
@@ -32,6 +37,10 @@ esp_err_t DSPetPlaybackDemoInit(void)
         if (probeError != ESP_OK) {
             ESP_LOGW(kTag, "Duplex probe unavailable: %s", esp_err_to_name(probeError));
         }
+#ifdef CONFIG_DSPET_DUPLEX_AUTO_TEST
+        sAutoTestStep = probeError == ESP_OK ? 0 : kAutoTestDone;
+        sAutoTestDueUs = esp_timer_get_time() + 2000000;
+#endif
     }
 #endif
     return error;
@@ -61,21 +70,13 @@ static void handleEvent(const DSPetPlaybackEvent *event)
     sCancelUs = 0;
 }
 
-void DSPetPlaybackDemoUpdate(uint32_t presses)
+static void togglePlayback(void)
 {
-    DSPetPlaybackEvent event;
-    while (DSPetPlaybackTakeEvent(&event)) {
-        handleEvent(&event);
-    }
-    if (sLastPresses == presses) {
-        return;
-    }
-    sLastPresses = presses;
     if (sPending) {
         if (!sCancelUs) {
             sCancelUs = esp_timer_get_time();
             DSPetPlaybackCancel();
-            ESP_LOGI(kTag, "BOOT requested stop");
+            ESP_LOGI(kTag, "Requested stop");
         }
         return;
     }
@@ -85,7 +86,49 @@ void DSPetPlaybackDemoUpdate(uint32_t presses)
         return;
     }
     sPending = true;
-    ESP_LOGI(kTag, "BOOT requested play (%u samples)", (unsigned)sSampleCount);
+    ESP_LOGI(kTag, "Requested play (%u samples)", (unsigned)sSampleCount);
+}
+
+#ifdef CONFIG_DSPET_DUPLEX_AUTO_TEST
+static void advanceAutoTest(void)
+{
+    int64_t nowUs = esp_timer_get_time();
+    if (sAutoTestStep == kAutoTestDone || nowUs < sAutoTestDueUs) {
+        return;
+    }
+    // 第一步播放，第二步在片段中间取消，第三步等取消完成后再次播放。
+    const bool needsPlayback = sAutoTestStep == 1;
+    if (sPending != needsPlayback) {
+        if (needsPlayback) {
+            ESP_LOGW(kTag, "Automatic test stopped: playback already ended");
+            sAutoTestStep = kAutoTestDone;
+        }
+        return;
+    }
+    ESP_LOGI(kTag, "Automatic test step %u/%u", sAutoTestStep + 1, kAutoTestDone);
+    togglePlayback();
+    sAutoTestDueUs = nowUs + (sAutoTestStep == 0 ? 3500000 : 1000000);
+    ++sAutoTestStep;
+}
+#endif
+
+void DSPetPlaybackDemoUpdate(uint32_t presses)
+{
+    DSPetPlaybackEvent event;
+    while (DSPetPlaybackTakeEvent(&event)) {
+        handleEvent(&event);
+    }
+    if (sLastPresses != presses) {
+        sLastPresses = presses;
+#ifdef CONFIG_DSPET_DUPLEX_AUTO_TEST
+        sAutoTestStep = kAutoTestDone;
+#endif
+        togglePlayback();
+        return;
+    }
+#ifdef CONFIG_DSPET_DUPLEX_AUTO_TEST
+    advanceAutoTest();
+#endif
 }
 
 bool DSPetPlaybackDemoSpeaking(int64_t *startedUs)
