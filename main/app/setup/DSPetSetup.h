@@ -14,10 +14,11 @@ esp_err_t DSPetSetupStart(void);
 
 /**
  * @brief 推进配网流程，并处理实体长按复位。
- * @param[in] reset 本轮收到长按后松开的事件时为 true。
- * @return 配网页拥有屏幕时返回 true。
+ * @param[in] reset 本轮收到达到长按时长的事件时为 true。
+ * @param[in] buttonHeld BOOT 仍处于按住状态时为 true。
+ * @return 配网页或恢复流程拥有屏幕时返回 true。
  */
-bool DSPetSetupUpdate(bool reset);
+bool DSPetSetupUpdate(bool reset, bool buttonHeld);
 
 /** @brief 打印当前配网阶段和公开的临时热点名称。 */
 void DSPetSetupPrintStatus(void);

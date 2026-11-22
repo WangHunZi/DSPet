@@ -10,3 +10,5 @@ ST7789 驱动使用 ESP-IDF 自带 `esp_lcd`（Apache-2.0）。
 素材按 CC BY-NC-SA 4.0 使用，相关文件不适用上游代码的 MIT 许可。
 
 配网二维码由 [espressif/qrcode 0.2.0](https://components.espressif.com/components/espressif/qrcode/versions/0.2.0/readme) 生成（Apache-2.0）。
+
+BOOT 手势识别使用 Espressif [Button 4.2.3](https://components.espressif.com/components/espressif/button/versions/4.2.3/readme)（Apache-2.0）。

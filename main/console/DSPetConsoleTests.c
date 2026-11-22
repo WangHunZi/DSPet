@@ -48,6 +48,10 @@ typedef struct {
     const char *confirmPrompt;
 } TestCase;
 
+#ifdef CONFIG_DSPET_PROVISIONING
+#include "DSPetSetupTest.h"
+#endif
+
 static const TestCase kCases[] = {
     {"hardware", "duplex", "audio_duplex", DSPetDuplexTestRun, NULL},
     {"hardware", "alignment", "audio_alignment", DSPetAlignmentTestRun, NULL},
@@ -150,6 +154,9 @@ void DSPetConsoleTestsHelp(void) {
     for (size_t i = 0; i < sizeof(kCases) / sizeof(kCases[0]); ++i) {
         printf("dspet test %s audio %s\n", kCases[i].category, kCases[i].action);
     }
+#ifdef CONFIG_DSPET_PROVISIONING
+    puts("dspet test hardware setup <storage|button>");
+#endif
     puts("dspet test status");
     puts("dspet test confirm <run-id> pass|fail");
 #ifdef CONFIG_DSPET_DIRECT_TEST
@@ -252,6 +259,17 @@ static int confirm(const char *idArg, const char *verdict) {
 }
 
 int DSPetConsoleTestsRunCommand(int argc, char **argv) {
+#ifdef CONFIG_DSPET_PROVISIONING
+    if (argc == 3 && strcmp(argv[0], "hardware") == 0 && strcmp(argv[1], "setup") == 0) {
+        if (strcmp(argv[2], "storage") == 0) {
+            return DSPetSetupTestStorage() == ESP_OK ? 0 : 1;
+        }
+        if (strcmp(argv[2], "button") == 0) {
+            DSPetSetupTestPrintButton();
+            return 0;
+        }
+    }
+#endif
 #ifdef CONFIG_DSPET_DIRECT_TEST
     if (argc >= 4 && strcmp(argv[0], "hardware") == 0 && strcmp(argv[1], "network") == 0) {
         if (argc == 4 && strcmp(argv[2], "scan") == 0) {

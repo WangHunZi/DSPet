@@ -96,7 +96,7 @@ static esp_err_t saveForm(httpd_req_t *request) {
     DSPetSetupConfig config = {0};
     const bool       parsed = !memchr(body, 0, size) && DSPetSetupFormParse(body, sToken, &config);
     mbedtls_platform_zeroize(body, sizeof(body));
-    const esp_err_t error = parsed ? DSPetSetupStoreSave(&config) : ESP_ERR_INVALID_ARG;
+    const esp_err_t error = parsed ? DSPetSetupStoreSave(kDSPetSetupNamespace, &config) : ESP_ERR_INVALID_ARG;
     mbedtls_platform_zeroize(&config, sizeof(config));
     httpd_resp_set_type(request, "text/html; charset=utf-8");
     httpd_resp_set_hdr(request, "Cache-Control", "no-store");

@@ -99,7 +99,8 @@ static void runPet(void) {
     for (;;) {
         DSPetButtonTakeCount(&presses);
 #ifdef CONFIG_DSPET_PROVISIONING
-        if (DSPetSetupUpdate(DSPetButtonTakeLongPress())) {
+        const bool reset = DSPetButtonTakeLongPress();
+        if (DSPetSetupUpdate(reset, DSPetButtonIsPressed())) {
             vTaskDelay(pdMS_TO_TICKS(20));
             continue;
         }

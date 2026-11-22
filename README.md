@@ -294,6 +294,11 @@ bash scripts/idf.sh -B .cache/build-setup -D SDKCONFIG=.cache/sdkconfig.setup \
 1. 首次开机屏幕显示 Wi-Fi 二维码。用手机相机扫描并加入临时 `DSPet-…` 热点。
 2. 在弹出的配网页填写 2.4 GHz Wi-Fi 名称、密码和 DeepSeek API Key。如果手机没有自动弹窗，保持连接该热点，在浏览器打开屏幕上的 `http://192.168.4.1/`。
 3. 点「保存并联网」。设备把三项配置保存到 Flash 的 NVS 并重启。设备连上 Wi-Fi 并完成 SNTP 校时后进入直连唤醒待机。连接或校时失败时会重新显示配网二维码，便于更正配置。
-4. 要恢复初始状态，在设备运行时长按 BOOT 至少 5 秒，再松手。清除配置后会重启，重新显示配网二维码。
+4. 要恢复初始状态，在设备运行时按住 BOOT。满 5 秒立即清除配置，松手后重启并重新显示配网二维码。按住不足 1 秒后松开算短按。
 
 板载 Shell 的 `dspet setup status` 显示配网、连接中或已上线。USB 串口的 `dspet setup hotspot` 可以按需查看一次性的热点口令。已保存的 Wi-Fi 密码和 API Key 不通过串口或网页回显。此配置使用 NVS 擦除和清理已删除的数据，尚未启用 Flash 静态加密。
+
+板载配网测试命令
+
+- `dspet test hardware setup storage` 在独立测试命名空间验证保存、读回和清除，板端配置可继续使用。
+- `dspet test hardware setup button` 读取 BOOT 当前电平、短按次数和已达标的长按次数。物理长按仍会触发恢复出厂，确认长按时先用测试配置。

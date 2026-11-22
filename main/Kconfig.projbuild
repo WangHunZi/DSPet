@@ -100,6 +100,6 @@ menu "DSPet serial shell"
         default n
         help
             Show a temporary WPA2 SoftAP QR code until Wi-Fi and DeepSeek
-            credentials are provisioned. Hold BOOT for five seconds and
-            release to erase the DSPet setup record and reboot.
+            credentials are provisioned. BOOT held for five seconds clears
+            the setup record. Releasing BOOT then reboots.
 endmenu

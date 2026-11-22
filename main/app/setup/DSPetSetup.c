@@ -19,6 +19,7 @@ typedef enum {
     kSetupConnecting,
     kSetupPortal,
     kSetupOnline,
+    kSetupResetting,
     kSetupError,
 } SetupState;
 
@@ -39,7 +40,7 @@ static esp_err_t startPortal(void) {
 
 esp_err_t DSPetSetupStart(void) {
     DSPetSetupConfig config = {0};
-    esp_err_t        error  = DSPetSetupStoreLoad(&config);
+    esp_err_t        error  = DSPetSetupStoreLoad(kDSPetSetupNamespace, &config);
     if (error == ESP_OK) {
         DSPetDirectSettings settings = {0};
         _Static_assert(sizeof(settings.ssid) == sizeof(config.ssid), "SSID capacity");
@@ -63,19 +64,28 @@ esp_err_t DSPetSetupStart(void) {
     return startPortal();
 }
 
-bool DSPetSetupUpdate(bool reset) {
-    const SetupState state = atomic_load(&sState);
-    if (reset) {
+bool DSPetSetupUpdate(bool reset, bool buttonHeld) {
+    SetupState state = atomic_load(&sState);
+    if (reset && state != kSetupResetting) {
         if (state == kSetupPortal) {
             atomic_store(&sState, kSetupError);
             DSPetSetupPortalStop();
         }
-        const esp_err_t error = DSPetSetupStoreClear();
+        const esp_err_t error = DSPetSetupStoreClear(kDSPetSetupNamespace);
         printf("DSPET_SETUP_RESET result=%s\n", esp_err_to_name(error));
         if (error == ESP_OK) {
+            state = kSetupResetting;
+            atomic_store(&sState, state);
+        } else if (state == kSetupPortal) {
+            ESP_ERROR_CHECK_WITHOUT_ABORT(startPortal());
+        }
+    }
+    if (state == kSetupResetting) {
+        // BOOT 是启动绑带引脚。擦除已完成，待释放后再重启。
+        if (!buttonHeld) {
             esp_restart();
         }
-        return false;
+        return true;
     }
     if (state == kSetupConnecting) {
         const DSPetLocalVoiceMode mode = DSPetLocalVoiceGetMode();
@@ -99,6 +109,7 @@ void DSPetSetupPrintStatus(void) {
         [kSetupConnecting] = "connecting",
         [kSetupPortal]     = "portal",
         [kSetupOnline]     = "online",
+        [kSetupResetting]  = "resetting",
         [kSetupError]      = "error",
     };
     const SetupState state = atomic_load(&sState);

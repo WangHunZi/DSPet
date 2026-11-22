@@ -7,22 +7,22 @@
 #include "nvs_flash.h"
 
 enum { kRecordVersion = 1 };
-static const char kNamespace[] = "dspet_setup";
-static const char kRecordKey[] = "credentials";
+const char        kDSPetSetupNamespace[] = "dspet_setup";
+static const char kRecordKey[]           = "credentials";
 
 typedef struct {
     uint8_t          version;
     DSPetSetupConfig config;
 } SetupRecord;
 
-static esp_err_t openStore(nvs_open_mode_t mode, nvs_handle_t *handle) {
+static esp_err_t openStore(const char *space, nvs_open_mode_t mode, nvs_handle_t *handle) {
     const esp_err_t error = nvs_flash_init();
-    return error == ESP_OK ? nvs_open(kNamespace, mode, handle) : error;
+    return error == ESP_OK ? nvs_open(space, mode, handle) : error;
 }
 
-esp_err_t DSPetSetupStoreLoad(DSPetSetupConfig *config) {
+esp_err_t DSPetSetupStoreLoad(const char *space, DSPetSetupConfig *config) {
     nvs_handle_t handle;
-    esp_err_t    error = openStore(NVS_READONLY, &handle);
+    esp_err_t    error = openStore(space, NVS_READONLY, &handle);
     if (error != ESP_OK) {
         return error;
     }
@@ -41,12 +41,12 @@ esp_err_t DSPetSetupStoreLoad(DSPetSetupConfig *config) {
     return error;
 }
 
-esp_err_t DSPetSetupStoreSave(const DSPetSetupConfig *config) {
+esp_err_t DSPetSetupStoreSave(const char *space, const DSPetSetupConfig *config) {
     if (!DSPetSetupConfigValid(config)) {
         return ESP_ERR_INVALID_ARG;
     }
     nvs_handle_t handle;
-    esp_err_t    error = openStore(NVS_READWRITE_PURGE, &handle);
+    esp_err_t    error = openStore(space, NVS_READWRITE_PURGE, &handle);
     if (error != ESP_OK) {
         return error;
     }
@@ -60,9 +60,9 @@ esp_err_t DSPetSetupStoreSave(const DSPetSetupConfig *config) {
     return error;
 }
 
-esp_err_t DSPetSetupStoreClear(void) {
+esp_err_t DSPetSetupStoreClear(const char *space) {
     nvs_handle_t handle;
-    esp_err_t    error = openStore(NVS_READWRITE_PURGE, &handle);
+    esp_err_t    error = openStore(space, NVS_READWRITE_PURGE, &handle);
     if (error != ESP_OK) {
         return error;
     }

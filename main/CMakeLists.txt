@@ -124,7 +124,7 @@ endif()
 if(CONFIG_DSPET_PROVISIONING)
     target_sources(${COMPONENT_LIB} PRIVATE "services/setup/DSPetSetupForm.c"
                    "services/setup/DSPetSetupStore.c" "services/setup/DSPetSetupPortal.c"
-                   "app/setup/DSPetSetup.c" "ui/DSPetSetupPage.c")
+                   "app/setup/DSPetSetup.c" "ui/DSPetSetupPage.c" "../tests/hardware/DSPetSetupTest.c")
     target_include_directories(${COMPONENT_LIB} PRIVATE "app/setup" "services/setup")
 endif()
 if(CONFIG_DSPET_SERIAL_SHELL)
