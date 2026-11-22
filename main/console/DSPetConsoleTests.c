@@ -17,8 +17,8 @@
 #include "freertos/task.h"
 #include "sdkconfig.h"
 #ifdef CONFIG_DSPET_DIRECT_TEST
-#include <unistd.h>
 
+#include "DSPetConsoleSecret.h"
 #include "DSPetDeepSeek.h"
 #include "DSPetDirectTest.h"
 #include "DSPetWifi.h"
@@ -163,6 +163,10 @@ static bool testAvailable(const TestCase *test) {
     bool needsAudio = true;
 #ifdef CONFIG_DSPET_DIRECT_TEST
     needsAudio = test != &kWifiScan;
+    if (DSPetLocalVoiceDirectActive()) {
+        puts("DSPET_ERROR direct_voice_owns_network; run dspet voice disable");
+        return false;
+    }
 #endif
     if (needsAudio && DSPetLocalVoiceGetMode() != kDSPetLocalVoiceOff) {
         puts("DSPET_ERROR voice_owns_audio; run dspet voice disable");
@@ -193,34 +197,6 @@ static int startTest(const TestCase *test) {
 }
 
 #ifdef CONFIG_DSPET_DIRECT_TEST
-static bool readSecret(const char *field, char *value, size_t capacity) {
-    printf("DSPET_INPUT field=%s\n", field);
-    fflush(stdout);
-    size_t        used  = 0;
-    bool          valid = true;
-    unsigned char byte;
-    // USB Serial/JTAG 的 VFS 不回显。绕过会将输入写回终端的 linenoise。
-    while (read(fileno(stdin), &byte, 1) == 1) {
-        if (byte == '\n' || byte == '\r') {
-            value[used] = '\0';
-            return valid && used;
-        }
-        if (byte == 3) {
-            return false;
-        }
-        if ((byte == 8 || byte == 127) && used) {
-            value[--used] = '\0';
-            continue;
-        }
-        if (byte >= 32 && byte != 127 && used + 1 < capacity) {
-            value[used++] = (char) byte;
-        } else {
-            valid = false;
-        }
-    }
-    return false;
-}
-
 static int prepareNetwork(const TestCase *test, const char *ssid, uint32_t unixTime, bool shortReply) {
     if (!testAvailable(test)) {
         return 1;
@@ -236,7 +212,8 @@ static int prepareNetwork(const TestCase *test, const char *ssid, uint32_t unixT
     } else {
         char password[kDSPetWifiPasswordBytes + 1];
         char key[kDSPetDeepSeekKeyBytes + 1];
-        if (readSecret("wifi_password", password, sizeof(password)) && readSecret("deepseek_key", key, sizeof(key))) {
+        if (DSPetConsoleReadSecret("wifi_password", password, sizeof(password)) &&
+            DSPetConsoleReadSecret("deepseek_key", key, sizeof(key))) {
             error = DSPetDirectTestPrepare(ssid, password, key, unixTime, shortReply);
         }
         mbedtls_platform_zeroize(password, sizeof(password));
@@ -282,14 +259,12 @@ int DSPetConsoleTestsRunCommand(int argc, char **argv) {
         }
         const bool shortReply = argc == 6 && strcmp(argv[5], "short") == 0;
         if ((argc == 5 || shortReply) && strcmp(argv[2], "direct") == 0) {
-            char *end;
-            errno                    = 0;
-            const uintmax_t unixTime = strtoumax(argv[4], &end, 10);
-            if (errno || *end || unixTime < 1600000000 || unixTime > UINT32_MAX) {
+            uint32_t unixTime;
+            if (!DSPetConsoleParseUnixTime(argv[4], &unixTime)) {
                 puts("DSPET_ERROR invalid_unix_time");
                 return 1;
             }
-            return prepareNetwork(&kDirectTest, argv[3], (uint32_t) unixTime, shortReply);
+            return prepareNetwork(&kDirectTest, argv[3], unixTime, shortReply);
         }
     }
 #endif

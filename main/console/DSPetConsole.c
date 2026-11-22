@@ -9,6 +9,10 @@
 #endif
 #ifdef CONFIG_DSPET_LOCAL_VOICE
 #include "DSPetLocalVoice.h"
+#ifdef CONFIG_DSPET_DIRECT_TEST
+#include "DSPetConsoleSecret.h"
+#include "mbedtls/platform_util.h"
+#endif
 #endif
 #include <stdio.h>
 #include <string.h>
@@ -28,6 +32,30 @@ static void printVoiceStatus(void) {
            DSPetLocalVoiceStateName(DSPetLocalVoiceGetState()));
 }
 
+#ifdef CONFIG_DSPET_DIRECT_TEST
+static int startDirectVoice(const char *ssid, const char *timeArg) {
+    if (DSPetLocalVoiceGetMode() != kDSPetLocalVoiceOff || DSPetConsoleTestsAudioBusy()) {
+        puts("DSPET_ERROR disable_voice_before_direct");
+        return 1;
+    }
+    DSPetDirectSettings settings = {0};
+    const size_t        length   = strlen(ssid);
+    if (!length || length >= sizeof(settings.ssid) || !DSPetConsoleParseUnixTime(timeArg, &settings.unixTime)) {
+        puts("DSPET_ERROR invalid_network_input");
+        return 1;
+    }
+    memcpy(settings.ssid, ssid, length);
+    esp_err_t error = ESP_ERR_INVALID_ARG;
+    if (DSPetConsoleReadSecret("wifi_password", settings.password, sizeof(settings.password)) &&
+        DSPetConsoleReadSecret("deepseek_key", settings.key, sizeof(settings.key)) && strlen(settings.password) >= 8) {
+        error = DSPetLocalVoiceEnableDirect(&settings);
+    }
+    mbedtls_platform_zeroize(&settings, sizeof(settings));
+    printf("DSPET_VOICE_COMMAND action=direct result=%s\n", esp_err_to_name(error));
+    return error == ESP_OK ? 0 : 1;
+}
+#endif
+
 static int handleVoice(const char *action) {
     if (strcmp(action, "status") == 0) {
         printVoiceStatus();
@@ -37,6 +65,10 @@ static int handleVoice(const char *action) {
     esp_err_t error = ESP_ERR_INVALID_ARG;
     if (strcmp(action, "start") == 0) {
         error = DSPetLocalVoiceStart();
+#ifdef CONFIG_DSPET_DIRECT_TEST
+    } else if (strcmp(action, "fixture") == 0) {
+        error = DSPetLocalVoiceStartFixture();
+#endif
     } else if (strcmp(action, "disable") == 0) {
         error = DSPetLocalVoiceSetEnabled(false);
     } else if (strcmp(action, "enable") == 0) {
@@ -58,6 +90,10 @@ static void printHelp(void) {
     puts("dspet info");
 #ifdef CONFIG_DSPET_LOCAL_VOICE
     puts("dspet voice <status|start|disable|enable>");
+#ifdef CONFIG_DSPET_DIRECT_TEST
+    puts("dspet voice direct <SSID> <unix-time>");
+    puts("dspet voice fixture");
+#endif
 #endif
 #ifdef CONFIG_DSPET_CONSOLE_TESTS
     DSPetConsoleTestsHelp();
@@ -78,6 +114,11 @@ static int handleCommand(int argc, char **argv) {
     if (argc == 3 && strcmp(argv[1], "voice") == 0) {
         return handleVoice(argv[2]);
     }
+#ifdef CONFIG_DSPET_DIRECT_TEST
+    if (argc == 5 && strcmp(argv[1], "voice") == 0 && strcmp(argv[2], "direct") == 0) {
+        return startDirectVoice(argv[3], argv[4]);
+    }
+#endif
 #endif
 #ifdef CONFIG_DSPET_CONSOLE_TESTS
     if (strcmp(argv[1], "test") == 0) {
