@@ -138,3 +138,34 @@ XIAO ESP32S3 Plus 的录音内存测试使用 Octal PSRAM，选择 `Add RAM to h
 `phase_us` 是两路 DMA 完成节拍的相位估计，做回声消除时还需校准实际路径延迟。
 也可以打开 `Automatically exercise playback, cancellation and normal completion once`。
 每次开机自检后会执行一轮自动验证，按 BOOT 可转为手动操作。
+
+## 板载串口测试
+
+默认固件在串口提供 `dspet help` 和 `dspet info`。实机测试版使用独立的构建目录和配置，不需要改日常固件的 `sdkconfig`。
+
+```sh
+bash tools/make_playback_demo.sh
+bash scripts/idf.sh -B .cache/build-serial-tests \
+  -D SDKCONFIG=.cache/sdkconfig.serial-check \
+  -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;tests/sdkconfig.serial.defaults' \
+  -p /dev/cu.usbmodem1101 flash monitor
+```
+
+串口出现 `xiao>` 后输入以下命令。将 `2` 替换成录音回放用例实际给出的运行编号。
+
+```text
+dspet help
+dspet info
+dspet test hardware audio duplex
+dspet test status
+dspet test human audio loopback
+dspet test confirm 2 pass
+```
+
+双路用例播放固定语音、取消并重播到自然结束。固件检查 PSRAM、RX/TX 连续性和 TX 静音。
+回放用例提示你在提示音后说话，回放后进入 `waiting_human`，能听清输入 `pass`，否则输入 `fail`。
+同一时间接受一个用例。`DSPET_TEST` 行带运行编号和状态，`DSPET_TEST_METRIC` 行报告双路测量值。
+运行编号和状态保存在 RAM，重启后重新计数。如需留存整轮证据，可用电脑保存串口输出。
+
+主机测试在 `tests/software/`，板上自动用例在 `tests/hardware/`，人工回放用例在 `tests/human/`。
+主机脚本可以在串口通过 CR 发送和终端相同的命令，记录 `DSPET_TEST` 结果。
