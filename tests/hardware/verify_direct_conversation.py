@@ -72,23 +72,37 @@ def verify_fixture_barge_in(board):
     asr = board.expect(fr"DSPET_DIRECT_ASR turn={first} elapsed_us=\d+ text=\S+|DSPET_VOICE event=direct_error", 80)
     if "direct_error" in asr.group():
         raise RuntimeError("受控插话前的 ASR 请求失败。")
-    playback = board.expect(fr"DSPET_DIRECT_STREAM turn={first} before_end=[01]", 70)
-    streaming = playback.group().endswith("before_end=1")
-    board.expect(fr"DSPET_VOICE event=playback_started state=speaking turn={first}\b", 75)
+    playback = fr"DSPET_VOICE event=playback_started state=speaking turn={first}\b"
+    ended = fr"DSPET_DIRECT_END turn={first} result=(?P<result>\w+) cancelled=(?P<cancelled>[01])"
+    event = board.expect(f"{playback}|{ended}", 75)
+    network = event if event.group("result") else None
+    if network:
+        board.expect(playback, 8)
+
     board.command("dspet voice fixture")
-    second = board.expect(r"DSPET_VOICE event=barge_in state=listening turn=(\d+)", 3).group(1)
+    interrupted = r"DSPET_VOICE event=barge_in state=listening turn=(?P<next_turn>\d+)"
+    event = board.expect(f"{interrupted}|{ended}", 6)
+    if event.group("result"):
+        network = event
+        event = board.expect(interrupted, 3)
+    second = event.group("next_turn")
     assert first != second
-    if streaming:
-        evidence = set()
-        for _ in range(2):
-            event = board.expect(
-                fr"DSPET_VOICE_DRAIN turn={first}\b|DSPET_DIRECT_END turn={first} result=\w+ cancelled=1", 6
-            )
-            evidence.add(event.group().split()[0])
-        assert len(evidence) == 2
+
+    drain = fr"DSPET_VOICE_DRAIN turn={first}\b"
+    if network is None:
+        event = board.expect(f"{drain}|{ended}", 6)
+        if event.group("result"):
+            network = event
+            board.expect(drain, 3)
+        else:
+            network = board.expect(ended, 6)
     else:
-        board.expect(fr"DSPET_VOICE_DRAIN turn={first}\b", 3)
-    print(f"DSPET_HOST_METRIC barge_during_download={int(streaming)}", flush=True)
+        board.expect(drain, 3)
+
+    cancelled = network.group("cancelled") == "1"
+    if not cancelled and network.group("result") != "ESP_OK":
+        raise RuntimeError("旧回合的网络响应未正常结束。")
+    print(f"DSPET_HOST_METRIC barge_during_download={int(cancelled)}", flush=True)
     asr = board.expect(fr"DSPET_DIRECT_ASR turn={second} elapsed_us=\d+ text=\S+|DSPET_VOICE event=direct_error", 80)
     if "direct_error" in asr.group():
         raise RuntimeError("旧回合已排空和关闭，下一轮 ASR 请求失败。")
