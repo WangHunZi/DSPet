@@ -4,3 +4,8 @@ dependencies:
     require: private
     rules:
       - if: "$CONFIG{DSPET_AEC} == True"
+  espressif/cjson:
+    version: "==1.7.19~2"
+    require: private
+    rules:
+      - if: "$CONFIG{DSPET_DIRECT_TEST} == True"

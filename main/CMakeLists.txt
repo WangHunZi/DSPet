@@ -58,6 +58,7 @@ idf_component_register(
     PRIV_INCLUDE_DIRS "." "app" "hardware" "services/input" "services/animation" "services/audio" "ui" "diagnostics" "console"
                       "${CMAKE_CURRENT_BINARY_DIR}"
     REQUIRES console esp_app_format esp_lcd esp_driver_gpio esp_driver_spi esp_driver_i2s esp_timer esp_rom
+    PRIV_REQUIRES esp_wifi esp_netif esp_event esp_http_client mbedtls
     EMBED_FILES ${binaries})
 if(CONFIG_DSPET_AEC)
     if(NOT CONFIG_SPIRAM OR CONFIG_SPIRAM_USE_MEMMAP)
@@ -105,6 +106,12 @@ if(CONFIG_DSPET_CONSOLE_TESTS)
 endif()
 if(CONFIG_DSPET_AUDIO_DUPLEX_PROBE)
     target_sources(${COMPONENT_LIB} PRIVATE "diagnostics/DSPetDuplexProbe.c")
+endif()
+if(CONFIG_DSPET_DIRECT_TEST)
+    target_sources(${COMPONENT_LIB} PRIVATE "services/network/DSPetWifi.c" "services/network/DSPetDeepSeek.c"
+                   "services/audio/DSPetPcm24kTo16k.c" "../tests/hardware/DSPetDirectTest.c")
+    target_include_directories(${COMPONENT_LIB} PRIVATE "services/network")
+    target_add_binary_data(${COMPONENT_LIB} "${PROJECT_DIR}/gateway/system_prompt.txt" TEXT)
 endif()
 if(CONFIG_DSPET_SERIAL_SHELL)
     target_sources(${COMPONENT_LIB} PRIVATE "console/DSPetConsole.c")

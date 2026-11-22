@@ -87,4 +87,12 @@ menu "DSPet serial shell"
         help
             Use the shared audio device for one serial test at a time.
             Requires the local speech fixture and PSRAM for audio tests.
+
+    config DSPET_DIRECT_TEST
+        bool "Enable serial Wi-Fi and direct DeepSeek diagnostics"
+        depends on DSPET_CONSOLE_TESTS && SPIRAM
+        default n
+        help
+            Enable on-demand station scanning and a single HTTPS chat and TTS
+            playback. The test uses one-shot credentials held in RAM.
 endmenu
