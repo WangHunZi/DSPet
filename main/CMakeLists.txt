@@ -74,7 +74,8 @@ if(CONFIG_DSPET_PLAYBACK_DEMO)
 endif()
 if(CONFIG_DSPET_CONSOLE_TESTS)
     target_sources(${COMPONENT_LIB} PRIVATE "console/DSPetConsoleTests.c"
-                   "../tests/hardware/DSPetDuplexTest.c" "../tests/human/DSPetLoopbackTest.c")
+                   "../tests/hardware/DSPetDuplexTest.c" "../tests/human/DSPetLoopbackTest.c"
+                   "../tests/hardware/DSPetAlignmentTest.c" "../tests/hardware/DSPetAudioCorrelation.c")
     target_include_directories(${COMPONENT_LIB} PRIVATE "../tests/hardware" "../tests/human")
 endif()
 if(CONFIG_DSPET_AUDIO_DUPLEX_PROBE)

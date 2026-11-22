@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "DSPetAlignmentTest.h"
 #include "DSPetDuplexTest.h"
 #include "DSPetLoopbackTest.h"
 #include "DSPetPlayback.h"
@@ -23,8 +24,22 @@ typedef enum {
 } TestState;
 
 typedef struct {
-    uint32_t id;
-    bool     human;
+    const char *category;
+    const char *action;
+    const char *name;
+    esp_err_t (*run)(void);
+    bool human;
+} TestCase;
+
+static const TestCase kCases[] = {
+    {"hardware", "duplex", "audio_duplex", DSPetDuplexTestRun, false},
+    {"hardware", "alignment", "audio_alignment", DSPetAlignmentTestRun, false},
+    {"human", "loopback", "audio_loopback", DSPetLoopbackTestRun, true},
+};
+
+typedef struct {
+    uint32_t        id;
+    const TestCase *test;
 } TestRun;
 
 static QueueHandle_t sRequests;
@@ -45,7 +60,7 @@ static const char *stateName(TestState state) {
 static void printStatus(TestRun run, TestState state, esp_err_t error) {
     printf("DSPET_TEST id=%" PRIu32 " case=%s state=%s error=%s\n",
            run.id,
-           run.human ? "audio_loopback" : "audio_duplex",
+           run.test->name,
            stateName(state),
            esp_err_to_name(error));
 }
@@ -56,8 +71,8 @@ static void testTask(void *context) {
         if (xQueueReceive(sRequests, &run, portMAX_DELAY) != pdTRUE) {
             continue;
         }
-        esp_err_t result = run.human ? DSPetLoopbackTestRun() : DSPetDuplexTestRun();
-        TestState state  = result == ESP_OK ? (run.human ? kTestWaiting : kTestPass) : kTestFail;
+        esp_err_t result = run.test->run();
+        TestState state  = result == ESP_OK ? (run.test->human ? kTestWaiting : kTestPass) : kTestFail;
         atomic_store(&sState, state);
         if (state == kTestWaiting) {
             printf("如果听清自己的声音，输入 dspet test confirm %" PRIu32 " pass，否则用 fail。\n", run.id);
@@ -87,19 +102,20 @@ esp_err_t DSPetConsoleTestsInit(void) {
 }
 
 void DSPetConsoleTestsHelp(void) {
-    puts("dspet test hardware audio duplex");
-    puts("dspet test human audio loopback");
+    for (size_t i = 0; i < sizeof(kCases) / sizeof(kCases[0]); ++i) {
+        printf("dspet test %s audio %s\n", kCases[i].category, kCases[i].action);
+    }
     puts("dspet test status");
     puts("dspet test confirm <run-id> pass|fail");
 }
 
-static int startTest(bool human) {
+static int startTest(const TestCase *test) {
     TestState state = atomic_load(&sState);
     if (!sRequests || state == kTestRunning || state == kTestWaiting) {
         puts("DSPET_ERROR test_runner_busy_or_unavailable");
         return 1;
     }
-    sCurrent = (TestRun) {.id = sCurrent.id + 1, .human = human};
+    sCurrent = (TestRun) {.id = sCurrent.id + 1, .test = test};
     atomic_store(&sState, kTestRunning);
     printStatus(sCurrent, kTestRunning, ESP_OK);
     if (xQueueSend(sRequests, &sCurrent, 0) != pdTRUE) {
@@ -132,11 +148,10 @@ static int confirm(const char *idArg, const char *verdict) {
 
 int DSPetConsoleTestsRunCommand(int argc, char **argv) {
     if (argc == 3 && strcmp(argv[1], "audio") == 0) {
-        if (strcmp(argv[0], "hardware") == 0 && strcmp(argv[2], "duplex") == 0) {
-            return startTest(false);
-        }
-        if (strcmp(argv[0], "human") == 0 && strcmp(argv[2], "loopback") == 0) {
-            return startTest(true);
+        for (size_t i = 0; i < sizeof(kCases) / sizeof(kCases[0]); ++i) {
+            if (strcmp(argv[0], kCases[i].category) == 0 && strcmp(argv[2], kCases[i].action) == 0) {
+                return startTest(&kCases[i]);
+            }
         }
     }
     if (argc == 3 && strcmp(argv[0], "confirm") == 0) {
