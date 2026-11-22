@@ -28,7 +28,7 @@ def voice_mode(board):
     return status.group(1)
 
 
-def check_private_input(board, command):
+def check_private_input(board, command, rejected=r"DSPET_ERROR invalid_network_input"):
     dummy = "dspet-private-input-check!"
     output = StringIO()
     with redirect_stdout(output):
@@ -38,12 +38,12 @@ def check_private_input(board, command):
         board.expect(r"DSPET_INPUT field=deepseek_key")
         board.connection.write(b"\x03")
         board.connection.flush()
-        board.expect(r"DSPET_ERROR invalid_network_input")
+        board.expect(rejected)
     if dummy in output.getvalue() or dummy in board.buffer:
         raise RuntimeError("板载终端回显了测试字符，已停止凭据传输。")
 
 
-def send_credentials(board, command, password, key):
+def send_private_input(board, command, password, key, accepted):
     output = StringIO()
     try:
         with redirect_stdout(output):
@@ -52,11 +52,11 @@ def send_credentials(board, command, password, key):
             board.command(password)
             board.expect(r"DSPET_INPUT field=deepseek_key")
             board.command(key)
-            started = board.expect(r"DSPET_TEST id=(\d+) case=network_direct state=running")
+            started = board.expect(accepted)
     except TimeoutError:
         raise RuntimeError("板载凭据输入未完成。") from None
     print(started.group(), flush=True)
-    return started.group(1)
+    return started
 
 
 def run_direct(board, ssid, password, key, short_reply):
@@ -69,7 +69,9 @@ def run_direct(board, ssid, password, key, short_reply):
         board.expect(r"DSPET_VOICE event=disabled state=idle")
     try:
         check_private_input(board, command)
-        run_id = send_credentials(board, command, password, key)
+        started = send_private_input(board, command, password, key,
+                                     r"DSPET_TEST id=(\d+) case=network_direct state=running")
+        run_id = started.group(1)
         return wait_result(board, run_id, "network_direct", 110)
     finally:
         if restore:

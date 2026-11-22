@@ -37,6 +37,12 @@ int main(void) {
 
     assert(DSPetVoiceSessionApply(&session, kDSPetVoiceStart, 0));
     assert(session.turnId != third);
+    assert(DSPetVoiceSessionApply(&session, kDSPetVoiceSpeechStart, 0));
+    assert(DSPetVoiceSessionApply(&session, kDSPetVoiceSpeechEnd, 0));
+    assert(!DSPetVoiceSessionApply(&session, kDSPetVoiceReplyFailed, third));
+    uint32_t failed = session.turnId;
+    assert(DSPetVoiceSessionApply(&session, kDSPetVoiceReplyFailed, failed));
+    assert(session.state == kDSPetVoiceListening && session.turnId != failed && !session.recording);
     assert(DSPetVoiceSessionApply(&session, kDSPetVoiceStop, 0));
     assert(session.state == kDSPetVoiceIdle);
     return 0;
