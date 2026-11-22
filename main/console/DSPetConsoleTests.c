@@ -18,6 +18,8 @@
 #include "sdkconfig.h"
 #ifdef CONFIG_DSPET_AEC
 #include "DSPetAecTest.h"
+#include "DSPetBargeInQuietTest.h"
+#include "DSPetBargeInTest.h"
 #endif
 
 typedef enum {
@@ -32,16 +34,23 @@ typedef struct {
     const char *action;
     const char *name;
     esp_err_t (*run)(void);
-    bool human;
+    const char *confirmPrompt;
 } TestCase;
 
 static const TestCase kCases[] = {
-    {"hardware", "duplex", "audio_duplex", DSPetDuplexTestRun, false},
-    {"hardware", "alignment", "audio_alignment", DSPetAlignmentTestRun, false},
+    {"hardware", "duplex", "audio_duplex", DSPetDuplexTestRun, NULL},
+    {"hardware", "alignment", "audio_alignment", DSPetAlignmentTestRun, NULL},
 #ifdef CONFIG_DSPET_AEC
-    {"hardware", "aec", "audio_aec", DSPetAecTestRun, false},
+    {"hardware", "aec", "audio_aec", DSPetAecTestRun, NULL},
+    {"hardware", "barge-in-quiet", "audio_barge_in_quiet", DSPetBargeInQuietTestRun, NULL},
+    {"human", "barge-in", "audio_barge_in", DSPetBargeInSpeechTestRun, "若插话成功停播，且回放听清了句首"},
+    {"human",
+     "barge-in-keyboard",
+     "audio_barge_in_keyboard",
+     DSPetBargeInKeyboardTestRun,
+     "若播报期间确实打过字，且播报自然结束"},
 #endif
-    {"human", "loopback", "audio_loopback", DSPetLoopbackTestRun, true},
+    {"human", "loopback", "audio_loopback", DSPetLoopbackTestRun, "若听清自己的声音"},
 };
 
 typedef struct {
@@ -79,10 +88,10 @@ static void testTask(void *context) {
             continue;
         }
         esp_err_t result = run.test->run();
-        TestState state  = result == ESP_OK ? (run.test->human ? kTestWaiting : kTestPass) : kTestFail;
+        TestState state  = result == ESP_OK ? (run.test->confirmPrompt ? kTestWaiting : kTestPass) : kTestFail;
         atomic_store(&sState, state);
         if (state == kTestWaiting) {
-            printf("如果听清自己的声音，输入 dspet test confirm %" PRIu32 " pass，否则用 fail。\n", run.id);
+            printf("%s，输入 dspet test confirm %" PRIu32 " pass，否则用 fail。\n", run.test->confirmPrompt, run.id);
         }
         printStatus(run, state, result);
     }
