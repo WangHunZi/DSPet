@@ -11,9 +11,9 @@ enum {
     kFrameMs         = 20,
     kVadGain         = 8,
     kBargeOnsetRms   = 110,
-    kListenOnsetRms  = 75,
+    kListenOnsetRms  = 90,
     kEnergyRms       = 52,
-    kContinuationRms = 42,
+    kContinuationRms = 48,
     kMeterPeak       = 384,
 };
 
@@ -56,18 +56,18 @@ DSPetSpeechEvidence DSPetSpeechDetectorProcess(
         }
         detector->amplified[i] = (int16_t) sample;
     }
-    *rms = sqrtf((float) squares / kDSPetSpeechFrameSamples);
+    *rms             = sqrtf((float) squares / kDSPetSpeechFrameSamples);
+    const bool voice = vad_process(detector->vad, detector->amplified, kSampleRateHz, kFrameMs) == VAD_SPEECH;
     if (recording) {
-        // 以上一句的安静底噪和固定下限判断停顿，避免底噪把续录拖到容量上限。
+        // 用开口前的安静底噪判断停顿。保留较强但被 VAD 漏判的辅音。
         const float floor = fmaxf(kContinuationRms, detector->quietRms * 1.5f);
-        return *rms >= floor ? kDSPetSpeechVoiced : kDSPetSpeechSilent;
+        return *rms >= floor && (voice || *rms >= kListenOnsetRms) ? kDSPetSpeechVoiced : kDSPetSpeechSilent;
     }
     if (*rms < kEnergyRms) {
         detector->quietRms += (*rms - detector->quietRms) * 0.05f;
     }
     // WebRTC 的保持状态仍持续更新，能量门限避免一个孤立敲击延长命中。
-    if (vad_process(detector->vad, detector->amplified, kSampleRateHz, kFrameMs) != VAD_SPEECH ||
-        squares < kEnergyRms * kEnergyRms * kDSPetSpeechFrameSamples) {
+    if (!voice || *rms < kEnergyRms) {
         return kDSPetSpeechSilent;
     }
     return *rms >= (playing ? kBargeOnsetRms : kListenOnsetRms) ? kDSPetSpeechStrong : kDSPetSpeechVoiced;
