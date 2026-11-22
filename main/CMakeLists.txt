@@ -63,7 +63,9 @@ if(CONFIG_DSPET_AEC)
     if(NOT CONFIG_SPIRAM OR CONFIG_SPIRAM_USE_MEMMAP)
         message(FATAL_ERROR "DSPet AEC requires PSRAM registered with the heap capabilities allocator")
     endif()
-    target_sources(${COMPONENT_LIB} PRIVATE "services/audio/DSPetAec.c" "services/audio/DSPetAecSync.c")
+    target_sources(${COMPONENT_LIB} PRIVATE "services/audio/DSPetAec.c" "services/audio/DSPetAecSync.c"
+                   "services/audio/DSPetNearSpeech.c" "services/audio/DSPetSpeechCapture.c"
+                   "services/audio/DSPetSpeechDetector.c" "app/DSPetBargeIn.c")
 endif()
 if(CONFIG_DSPET_PLAYBACK_DEMO OR CONFIG_DSPET_CONSOLE_TESTS)
     set(demo_source "${CMAKE_CURRENT_LIST_DIR}/app/DSPetPlaybackDemoAsset.S")
