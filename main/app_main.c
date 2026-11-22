@@ -22,6 +22,11 @@
 
 static const char *const kTag = "pet";
 
+#ifdef CONFIG_DSPET_LOCAL_VOICE
+// 挥手素材从第 3 秒起已进入笑脸动作，也正好落在关键帧上。
+enum { kSpeakingCueSeconds = 3 };
+#endif
+
 #if defined(CONFIG_DSPET_PLAYBACK_DEMO) || defined(CONFIG_DSPET_LOCAL_VOICE)
 static const DSPetClip *findClip(const char *name) {
     for (size_t i = 0; i < PET_CLIP_COUNT; ++i) {
@@ -47,8 +52,9 @@ static void runPet(void) {
 #ifdef CONFIG_DSPET_LOCAL_VOICE
     ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetLocalVoiceInit());
     const DSPetClip *listening      = findClip("stretch");
-    const DSPetClip *waiting        = findClip("sleep");
+    const DSPetClip *waiting        = findClip("idle");
     const DSPetClip *speaking       = findClip("wave");
+    const unsigned   speakingCue    = kSpeakingCueSeconds * speaking->fps;
     DSPetVoiceState  lastVoice      = kDSPetVoiceIdle;
     int64_t          voiceStartedUs = 0;
 #endif
@@ -97,7 +103,8 @@ static void runPet(void) {
             clip = &pet_clips[action.index];
             ESP_LOGI(kTag, "Action: %s (BOOT presses=%" PRIu32 ")", clip->name, actionPresses);
         }
-        int64_t startedUs = action.startedUs;
+        int64_t  startedUs  = action.startedUs;
+        unsigned firstFrame = 0;
 #ifdef CONFIG_DSPET_PLAYBACK_DEMO
         if (demoEnabled && DSPetPlaybackDemoSpeaking(&startedUs)) {
             clip = speaking;
@@ -112,10 +119,13 @@ static void runPet(void) {
         if (voice != kDSPetVoiceIdle) {
             startedUs = voiceStartedUs;
             clip      = voice == kDSPetVoiceListening ? listening : voice == kDSPetVoiceWaiting ? waiting : speaking;
+            if (voice == kDSPetVoiceSpeaking && speakingCue < speaking->frameCount) {
+                firstFrame = speakingCue;
+            }
         }
 #endif
         int64_t nextFrameUs;
-        ESP_ERROR_CHECK(DSPetPetPageDraw(clip, startedUs, &nextFrameUs));
+        ESP_ERROR_CHECK(DSPetPetPageDraw(clip, firstFrame, startedUs, &nextFrameUs));
         // 按绝对时间调度，刷屏较慢时允许跳帧，保留原动作时长。
         int64_t    remainingUs = nextFrameUs - esp_timer_get_time();
         TickType_t delayTicks  = remainingUs > 0 ? pdMS_TO_TICKS((remainingUs + 999) / 1000) : 1;

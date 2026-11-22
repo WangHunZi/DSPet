@@ -26,11 +26,13 @@ esp_err_t DSPetAnimationInit(size_t pixelCount);
 /**
  * @brief 按时间取得当前动画帧，必要时从关键帧恢复。
  * @param[in] clip 经构建系统验证的常驻片段。
+ * @param[in] firstFrame 本轮循环起始帧，须小于片段帧数。
  * @param[in] startedUs 当前轮播放开始时刻，单位微秒。
  * @param[in] nowUs 当前时刻，单位微秒。
  * @param[out] frame 成功时写入帧视图。
  * @return ESP_OK 表示成功，否则为参数、状态或素材解码错误。
  */
-esp_err_t DSPetAnimationFrameAt(const DSPetClip *clip, int64_t startedUs, int64_t nowUs, DSPetAnimationFrame *frame);
+esp_err_t DSPetAnimationFrameAt(
+    const DSPetClip *clip, unsigned firstFrame, int64_t startedUs, int64_t nowUs, DSPetAnimationFrame *frame);
 
 #endif

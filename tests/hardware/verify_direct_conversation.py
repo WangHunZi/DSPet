@@ -37,15 +37,19 @@ def verify_fixture(board):
     board.command("dspet voice fixture")
     start = board.expect(r"DSPET_VOICE event=fixture_start state=listening turn=(\d+)")
     turn = start.group(1)
+    board.expect(fr"DSPET_VOICE event=fixture_end state=waiting turn={turn}\b")
+    board.expect(r"DSPET_PET_FRAME clip=idle frame=0 draw_us=\d+")
     asr = board.expect(fr"DSPET_DIRECT_ASR turn={turn} elapsed_us=\d+ text=\S+|DSPET_VOICE event=direct_error", 80)
     if "direct_error" in asr.group():
         raise RuntimeError("板载会话在取得 ASR 结果前失败。")
     started = False
     buffered = None
     gaps = None
+    speaking_draw_us = None
     patterns = [
         fr"DSPET_DIRECT_STREAM turn={turn} before_end=([01])",
         fr"DSPET_VOICE event=playback_started state=speaking turn={turn}\b",
+        r"DSPET_PET_FRAME clip=wave frame=72 draw_us=\d+",
         fr"DSPET_DIRECT_END turn={turn} result=\w+ cancelled=\d+ samples=\d+ gaps=\d+",
     ]
     for _ in patterns:
@@ -54,14 +58,20 @@ def verify_fixture(board):
             buffered = event.endswith("before_end=0")
         elif event.startswith("DSPET_VOICE"):
             started = True
+        elif event.startswith("DSPET_PET_FRAME"):
+            speaking_draw_us = int(event.rsplit("draw_us=", 1)[1])
         else:
             if "result=ESP_OK cancelled=0" not in event:
                 raise RuntimeError("自动用例播放未完整结束。")
             gaps = int(event.rsplit("gaps=", 1)[1])
-    if not started or buffered is None or gaps is None or (buffered and gaps != 0):
+    if not started or buffered is None or gaps is None or speaking_draw_us is None or (buffered and gaps != 0):
         raise RuntimeError("串口未确认播放策略、收尾和缓冲结果。")
-    print(f"DSPET_HOST_METRIC direct_fixture buffered={int(buffered)} gaps={gaps}", flush=True)
+    print(
+        f"DSPET_HOST_METRIC direct_fixture buffered={int(buffered)} gaps={gaps} speaking_draw_us={speaking_draw_us}",
+        flush=True,
+    )
     board.expect(r"DSPET_VOICE event=playback_finished state=listening turn=\d+", 40)
+    board.expect(r"DSPET_PET_FRAME clip=stretch frame=0 draw_us=\d+")
     board.expect(r"DSPET_VOICE event=listen_timeout state=idle turn=\d+", 12)
     print("DSPET_HOST_TEST direct_fixture=pass", flush=True)
 

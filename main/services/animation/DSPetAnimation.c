@@ -71,16 +71,17 @@ static esp_err_t decodeIndexedFrame(const DSPetClip *clip, size_t index) {
     return ESP_OK;
 }
 
-esp_err_t DSPetAnimationFrameAt(const DSPetClip *clip, int64_t startedUs, int64_t nowUs, DSPetAnimationFrame *frame) {
+esp_err_t DSPetAnimationFrameAt(
+    const DSPetClip *clip, unsigned firstFrame, int64_t startedUs, int64_t nowUs, DSPetAnimationFrame *frame) {
     if (!sDecoded) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (!clip || !frame || !clip->fps || !clip->frameCount || !clip->keyframeInterval || startedUs < 0 ||
+    if (!clip || !frame || !clip->fps || firstFrame >= clip->frameCount || !clip->keyframeInterval || startedUs < 0 ||
         nowUs < startedUs) {
         return ESP_ERR_INVALID_ARG;
     }
     const uint64_t sequence = (uint64_t) (nowUs - startedUs) * clip->fps / 1000000;
-    const size_t   index    = sequence % clip->frameCount;
+    const size_t   index    = firstFrame + sequence % (clip->frameCount - firstFrame);
     if (sClip != clip || sLastDecoded != index) {
         size_t first = index - index % clip->keyframeInterval;
         if (sClip == clip && sLastDecoded < index && sLastDecoded >= first) {

@@ -1,5 +1,9 @@
 #include "DSPetPetPage.h"
 
+#include <inttypes.h>
+#include <stdbool.h>
+#include <stdio.h>
+
 #include "DSPetAnimation.h"
 #include "DSPetPanel.h"
 #include "esp_log.h"
@@ -12,11 +16,12 @@ static unsigned          sFramesSent;
 static int64_t           sDecodeTotalUs;
 static int64_t           sTransferTotalUs;
 
-esp_err_t DSPetPetPageDraw(const DSPetClip *clip, int64_t startedUs, int64_t *nextFrameUs) {
+esp_err_t DSPetPetPageDraw(const DSPetClip *clip, unsigned firstFrame, int64_t startedUs, int64_t *nextFrameUs) {
     if (!nextFrameUs) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (startedUs != sStartedUs) {
+    const bool firstDraw = startedUs != sStartedUs;
+    if (firstDraw) {
         sStartedUs       = startedUs;
         sLastLogUs       = startedUs;
         sFramesSent      = 0;
@@ -25,7 +30,7 @@ esp_err_t DSPetPetPageDraw(const DSPetClip *clip, int64_t startedUs, int64_t *ne
     }
     int64_t             decodeStartUs = esp_timer_get_time();
     DSPetAnimationFrame frame;
-    esp_err_t           error = DSPetAnimationFrameAt(clip, startedUs, decodeStartUs, &frame);
+    esp_err_t error = DSPetAnimationFrameAt(clip, firstFrame, startedUs, firstDraw ? startedUs : decodeStartUs, &frame);
     if (error != ESP_OK) {
         return error;
     }
@@ -35,6 +40,9 @@ esp_err_t DSPetPetPageDraw(const DSPetClip *clip, int64_t startedUs, int64_t *ne
         return error;
     }
     int64_t nowUs = esp_timer_get_time();
+    if (firstDraw) {
+        printf("DSPET_PET_FRAME clip=%s frame=%u draw_us=%" PRId64 "\n", clip->name, frame.index, nowUs - startedUs);
+    }
     sDecodeTotalUs += transferStartUs - decodeStartUs;
     sTransferTotalUs += nowUs - transferStartUs;
     ++sFramesSent;
