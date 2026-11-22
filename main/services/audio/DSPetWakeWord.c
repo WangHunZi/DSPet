@@ -2,10 +2,11 @@
 
 #include <stdlib.h>
 
+#include "DSPetAudioDevice.h"
 #include "esp_wn_models.h"
 #include "model_path.h"
 
-enum { kMicGain = 16 };
+enum { kMicGain = 16, kRearmSamples = kDSPetAudioDeviceSampleRateHz };
 
 struct DSPetWakeWord {
     srmodel_list_t       *models;
@@ -14,6 +15,7 @@ struct DSPetWakeWord {
     int16_t              *frame;
     size_t                frameSamples;
     size_t                usedSamples;
+    size_t                rearmSamples;
 };
 
 esp_err_t DSPetWakeWordCreate(DSPetWakeWord **out) {
@@ -56,8 +58,13 @@ bool DSPetWakeWordPush(DSPetWakeWord *wakeWord, const int16_t *samples, size_t s
         }
         wakeWord->frame[wakeWord->usedSamples++] = (int16_t) sample;
         if (wakeWord->usedSamples == wakeWord->frameSamples) {
-            wakeWord->usedSamples = 0;
-            if (wakeWord->iface->detect(wakeWord->model, wakeWord->frame) == WAKENET_DETECTED) {
+            wakeWord->usedSamples          = 0;
+            const wakenet_state_t detected = wakeWord->iface->detect(wakeWord->model, wakeWord->frame);
+            if (wakeWord->rearmSamples) {
+                const size_t used =
+                    wakeWord->frameSamples < wakeWord->rearmSamples ? wakeWord->frameSamples : wakeWord->rearmSamples;
+                wakeWord->rearmSamples -= used;
+            } else if (detected == WAKENET_DETECTED) {
                 return true;
             }
         }
@@ -66,8 +73,9 @@ bool DSPetWakeWordPush(DSPetWakeWord *wakeWord, const int16_t *samples, size_t s
 }
 
 void DSPetWakeWordReset(DSPetWakeWord *wakeWord) {
-    wakeWord->usedSamples = 0;
-    wakeWord->iface->clean(wakeWord->model);
+    // ESP-SR 2.6.1 的 WakeNet9 clean 在本模型上访问空队列。检测持续推进窗口，过渡期忽略旧命中。
+    wakeWord->usedSamples  = 0;
+    wakeWord->rearmSamples = kRearmSamples;
 }
 
 void DSPetWakeWordDestroy(DSPetWakeWord *wakeWord) {

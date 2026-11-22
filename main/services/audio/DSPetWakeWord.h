@@ -28,7 +28,7 @@ esp_err_t DSPetWakeWordCreate(DSPetWakeWord **wakeWord);
 bool DSPetWakeWordPush(DSPetWakeWord *wakeWord, const int16_t *samples, size_t sampleCount);
 
 /**
- * @brief 清除会话前的唤醒历史和不足一帧的数据。
+ * @brief 丢弃半帧并用新的麦克风数据自然刷新唤醒窗口。
  * @param[in,out] wakeWord 已创建的实例。
  */
 void DSPetWakeWordReset(DSPetWakeWord *wakeWord);
