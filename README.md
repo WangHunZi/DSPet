@@ -227,3 +227,23 @@ HTTP 默认监听 `127.0.0.1:8765`。板端联网联调时可通过 `--bind` 指
 音频开始前的失败以 JSON 返回 `error.code` 和 `error.message`。音频开始后的失败会关闭连接，完整响应有 HTTP 分块结束标记。已取消的回合及迟到数据通过回合编号识别。会话历史存在网关内存中，同一会话保留最近六轮；网关日志只记录回合编号、耗时、字节数和错误码。
 
 运行 `python3 -m unittest discover -s tests/software -p test_gateway.py` 可用模拟上游复测。测试覆盖会话历史、异常返回、收到首块后取消，以及取消旧回合后继续对话。
+
+## XIAO 直连 DeepSeek 验证
+
+直连测试版加入 Wi-Fi 和 HTTPS。它保留板端本地会话，并提供一个独立用例，通过固定文本问题验证对话、TTS 和喇叭播放。首次安装此配置时执行完整烧录，写入新的分区表和唤醒模型。
+
+```sh
+bash tools/make_playback_demo.sh
+bash scripts/idf.sh -B .cache/build-direct -D SDKCONFIG=.cache/sdkconfig.direct \
+  -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;tests/sdkconfig.serial.defaults;tests/sdkconfig.direct.defaults' \
+  -p /dev/cu.usbmodem1101 flash
+```
+
+关闭占用串口的终端，使用安装了 pyserial 的 Python。先按家中 SSID 前缀扫描 2.4 GHz 网络，再使用扫描到的完整 SSID。
+
+```sh
+python3 tests/hardware/verify_direct_voice.py --port /dev/cu.usbmodem1101 scan 家中网络前缀
+python3 tests/hardware/verify_direct_voice.py --port /dev/cu.usbmodem1101 direct 实际SSID
+```
+
+直连用例通过隐藏输入取得 Wi-Fi 口令和 DeepSeek Key，串口日志只显示阶段结果。Wi-Fi 使用 RAM 配置，释放测试资源时擦除凭据。串口同时提供当前时间供板端校验证书有效期。测试先暂时关闭本地语音，收完整段合成音频后重采样播放，结束后恢复原来的唤醒模式。`direct` 可加 `--short` 验证一字回复。串口报告 Wi-Fi 信道、TLS 握手、内部堆、HTTP 状态及首批 PCM 排入 I²S 的耗时。
