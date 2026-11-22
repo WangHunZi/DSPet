@@ -70,6 +70,12 @@ bool DSPetIndexedFrameExpand(uint8_t *buffer, size_t pixelCount, size_t capacity
 - 格式化限于本次修改的文件。审核时核对命名、中文注释和接口契约。纯风格修改保留原有状态转换、错误返回、数据格式和所有权语义。
 - 固件变更按影响范围运行主机构建测试和 ESP-IDF 构建。涉及按键、显示或音频行为时，按 [README](../README.md) 的步骤进行实物验证。
 
+## Git 提交
+
+- 标题沿用 `type(scope): 中文说明`。`type` 和 `scope` 延续仓库已有的英文命名，正文用中文交代改动原因、行为和验证结果。接口名、命令和日志字段保留原拼写。
+- 每笔提交对应一项可独立 review 的改动。需要分阶段实现时，按职责拆提交，并随对应改动更新测试或文档。
+- 示例 `feat(audio): 对齐麦克风采样与播放参考`、`fix(app): 丢弃已取消回合的迟到音频`。
+
 ## 参考
 
 - 公共头文件的 API 注释结构。 [Espressif API 注释格式](https://docs.espressif.com/projects/esp-docs/en/latest/writing-documentation/api-documentation.html)
