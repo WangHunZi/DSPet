@@ -1,5 +1,7 @@
 #include "DSPetButton.h"
 
+#include <stdatomic.h>
+
 #include "DSPetBootPin.h"
 #include "DSPetButtonFilter.h"
 #include "esp_check.h"
@@ -9,6 +11,7 @@
 #include "freertos/task.h"
 
 static QueueHandle_t     sPresses;
+static atomic_bool       sLongPress;
 static const char *const kTag = "button";
 
 static void pollButton(void *context) {
@@ -19,9 +22,12 @@ static void pollButton(void *context) {
     TickType_t lastWake = xTaskGetTickCount();
     for (;;) {
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(10));
-        bool     pressed = DSPetBootPinIsPressed();
-        uint32_t nowMs   = (uint32_t) (esp_timer_get_time() / 1000);
-        if (DSPetButtonFilterUpdate(&filter, pressed, nowMs)) {
+        bool                   pressed = DSPetBootPinIsPressed();
+        uint32_t               nowMs   = (uint32_t) (esp_timer_get_time() / 1000);
+        const DSPetButtonEvent event   = DSPetButtonFilterUpdate(&filter, pressed, nowMs);
+        if (event == kDSPetButtonLongPress) {
+            atomic_store(&sLongPress, true);
+        } else if (event == kDSPetButtonShortPress) {
             // 保留最新累计值，应用忙于刷屏时仍能还原按下次数。
             ++count;
             xQueueOverwrite(queue, &count);
@@ -47,3 +53,5 @@ esp_err_t DSPetButtonStart(void) {
 }
 
 bool DSPetButtonTakeCount(uint32_t *count) { return sPresses && count && xQueueReceive(sPresses, count, 0) == pdTRUE; }
+
+bool DSPetButtonTakeLongPress(void) { return atomic_exchange(&sLongPress, false); }

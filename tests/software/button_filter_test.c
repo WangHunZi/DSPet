@@ -1,38 +1,35 @@
 #include <assert.h>
-#include <stdint.h>
 
 #include "DSPetButtonFilter.h"
 
 int main(void) {
-    DSPetButtonFilter f;
-    DSPetButtonFilterInit(&f, false, 0);
-    // Contact bounce must produce exactly one press after 30 ms stable.
-    assert(!DSPetButtonFilterUpdate(&f, true, 10));
-    assert(!DSPetButtonFilterUpdate(&f, false, 15));
-    assert(!DSPetButtonFilterUpdate(&f, true, 20));
-    assert(!DSPetButtonFilterUpdate(&f, true, 49));
-    assert(DSPetButtonFilterUpdate(&f, true, 50));
-    // Holding the button does not repeat.
-    assert(!DSPetButtonFilterUpdate(&f, true, 5000));
-    // A release that bounces back low must not re-arm.
-    assert(!DSPetButtonFilterUpdate(&f, false, 5010));
-    assert(!DSPetButtonFilterUpdate(&f, true, 5020));
-    assert(!DSPetButtonFilterUpdate(&f, true, 5050));
-    assert(!DSPetButtonFilterUpdate(&f, false, 5060));
-    assert(!DSPetButtonFilterUpdate(&f, false, 5090));
-    assert(!DSPetButtonFilterUpdate(&f, true, 5100));
-    assert(DSPetButtonFilterUpdate(&f, true, 5130));
-    // A button held during startup is ignored until released and pressed again.
-    DSPetButtonFilterInit(&f, true, 0);
-    assert(!DSPetButtonFilterUpdate(&f, true, 100));
-    assert(!DSPetButtonFilterUpdate(&f, false, 200));
-    assert(!DSPetButtonFilterUpdate(&f, false, 230));
-    assert(!DSPetButtonFilterUpdate(&f, true, 240));
-    assert(DSPetButtonFilterUpdate(&f, true, 270));
-    // Debouncing is valid across a uint32 millisecond clock wrap.
-    DSPetButtonFilterInit(&f, false, UINT32_MAX - 20);
-    assert(!DSPetButtonFilterUpdate(&f, true, UINT32_MAX - 10));
-    assert(!DSPetButtonFilterUpdate(&f, true, 18));
-    assert(DSPetButtonFilterUpdate(&f, true, 19));
-    return 0;
+    DSPetButtonFilter filter;
+    DSPetButtonFilterInit(&filter, false, 0);
+    assert(DSPetButtonFilterUpdate(&filter, true, 10) == kDSPetButtonNoEvent);
+    assert(DSPetButtonFilterUpdate(&filter, false, 15) == kDSPetButtonNoEvent);
+    assert(DSPetButtonFilterUpdate(&filter, true, 20) == kDSPetButtonNoEvent);
+    assert(DSPetButtonFilterUpdate(&filter, true, 50) == kDSPetButtonNoEvent);
+    assert(DSPetButtonFilterUpdate(&filter, false, 75) == kDSPetButtonNoEvent);
+    assert(DSPetButtonFilterUpdate(&filter, true, 80) == kDSPetButtonNoEvent);
+    assert(DSPetButtonFilterUpdate(&filter, false, 90) == kDSPetButtonNoEvent);
+    assert(DSPetButtonFilterUpdate(&filter, false, 120) == kDSPetButtonShortPress);
+    assert(DSPetButtonFilterUpdate(&filter, false, 121) == kDSPetButtonNoEvent);
+
+    assert(DSPetButtonFilterUpdate(&filter, true, 200) == kDSPetButtonNoEvent);
+    assert(DSPetButtonFilterUpdate(&filter, true, 230) == kDSPetButtonNoEvent);
+    assert(DSPetButtonFilterUpdate(&filter, true, 5210) == kDSPetButtonNoEvent);
+    assert(DSPetButtonFilterUpdate(&filter, false, 5230) == kDSPetButtonNoEvent);
+    assert(DSPetButtonFilterUpdate(&filter, false, 5260) == kDSPetButtonLongPress);
+    assert(DSPetButtonFilterUpdate(&filter, false, 5261) == kDSPetButtonNoEvent);
+
+    DSPetButtonFilterInit(&filter, true, 0);
+    assert(DSPetButtonFilterUpdate(&filter, true, 6000) == kDSPetButtonNoEvent);
+    assert(DSPetButtonFilterUpdate(&filter, false, 6100) == kDSPetButtonNoEvent);
+    assert(DSPetButtonFilterUpdate(&filter, false, 6130) == kDSPetButtonNoEvent);
+
+    DSPetButtonFilterInit(&filter, false, UINT32_MAX - 60);
+    assert(DSPetButtonFilterUpdate(&filter, true, UINT32_MAX - 50) == kDSPetButtonNoEvent);
+    assert(DSPetButtonFilterUpdate(&filter, true, UINT32_MAX - 20) == kDSPetButtonNoEvent);
+    assert(DSPetButtonFilterUpdate(&filter, false, 4950) == kDSPetButtonNoEvent);
+    assert(DSPetButtonFilterUpdate(&filter, false, 4980) == kDSPetButtonLongPress);
 }

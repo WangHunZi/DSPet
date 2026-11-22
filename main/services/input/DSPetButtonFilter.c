@@ -1,5 +1,7 @@
 #include "DSPetButtonFilter.h"
 
+enum { kDebounceMs = 30, kLongPressMs = 5000 };
+
 void DSPetButtonFilterInit(DSPetButtonFilter *filter, bool pressed, uint32_t nowMs) {
     *filter = (DSPetButtonFilter) {
         .rawPressed    = pressed,
@@ -9,19 +11,23 @@ void DSPetButtonFilterInit(DSPetButtonFilter *filter, bool pressed, uint32_t now
     };
 }
 
-bool DSPetButtonFilterUpdate(DSPetButtonFilter *filter, bool pressed, uint32_t nowMs) {
+DSPetButtonEvent DSPetButtonFilterUpdate(DSPetButtonFilter *filter, bool pressed, uint32_t nowMs) {
     if (pressed != filter->rawPressed) {
         filter->rawPressed  = pressed;
         filter->changedAtMs = nowMs;
     }
     // 无符号差值允许毫秒时钟回绕。
-    if ((uint32_t) (nowMs - filter->changedAtMs) < 30 || filter->stablePressed == pressed) return false;
-    filter->stablePressed = pressed;
-    if (!pressed) {
-        filter->armed = true;
-        return false;
+    if (nowMs - filter->changedAtMs < kDebounceMs || filter->stablePressed == pressed) {
+        return kDSPetButtonNoEvent;
     }
-    if (!filter->armed) return false;
-    filter->armed = false;
-    return true;
+    filter->stablePressed = pressed;
+    if (pressed) {
+        filter->pressedAtMs = filter->changedAtMs;
+        return kDSPetButtonNoEvent;
+    }
+    if (!filter->armed) {
+        filter->armed = true;
+        return kDSPetButtonNoEvent;
+    }
+    return filter->changedAtMs - filter->pressedAtMs >= kLongPressMs ? kDSPetButtonLongPress : kDSPetButtonShortPress;
 }
