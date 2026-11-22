@@ -50,12 +50,34 @@ def verify_fixture(board):
     print("DSPET_HOST_TEST direct_fixture=pass", flush=True)
 
 
+def verify_fixture_barge_in(board):
+    board.command("dspet voice fixture")
+    first = board.expect(r"DSPET_VOICE event=fixture_start state=listening turn=(\d+)").group(1)
+    board.expect(fr"DSPET_VOICE event=playback_started state=speaking turn={first}\b", 75)
+    board.command("dspet voice fixture")
+    second = board.expect(r"DSPET_VOICE event=barge_in state=listening turn=(\d+)", 3).group(1)
+    assert first != second
+    evidence = set()
+    for _ in range(2):
+        event = board.expect(
+            fr"DSPET_VOICE_DRAIN turn={first}\b|DSPET_DIRECT_END turn={first} result=\w+ cancelled=1", 6
+        )
+        evidence.add(event.group().split()[0])
+    assert len(evidence) == 2
+    board.expect(fr"DSPET_DIRECT_ASR turn={second} elapsed_us=\d+ text=\S+", 58)
+    board.expect(fr"DSPET_VOICE event=playback_started state=speaking turn={second}\b", 50)
+    board.expect(r"DSPET_VOICE event=playback_finished state=listening turn=\d+", 50)
+    board.expect(r"DSPET_VOICE event=listen_timeout state=idle turn=\d+", 13)
+    print("DSPET_HOST_TEST direct_fixture_barge_in=pass", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", required=True)
     parser.add_argument("--ssid", required=True)
     parser.add_argument("--keep-enabled", action="store_true", help="结束后继续保持直连，供人工测试")
     parser.add_argument("--setup-only", action="store_true", help="只完成配网和启动，留给人工测试")
+    parser.add_argument("--exercise-cancel", action="store_true", help="再验证一轮受控插话和下一次 ASR")
     args = parser.parse_args()
     if not sys.stdin.isatty():
         parser.error("需要在终端隐藏输入凭据。")
@@ -66,6 +88,8 @@ def main():
         try:
             if not args.setup_only:
                 verify_fixture(board)
+                if args.exercise_cancel:
+                    verify_fixture_barge_in(board)
         finally:
             if not args.keep_enabled:
                 select_offline(board)

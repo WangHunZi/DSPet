@@ -221,10 +221,18 @@ static esp_err_t advanceDirect(LocalVoice *voice) {
 }
 
 static void startFixture(LocalVoice *voice) {
-    if (voice->direct && voice->session.state == kDSPetVoiceIdle) {
+    if (!voice->direct) {
+        return;
+    }
+    if (voice->session.state == kDSPetVoiceIdle) {
         startSession(voice, "fixture_start");
         DSPetVoiceSessionApply(&voice->session, kDSPetVoiceSpeechStart, 0);
-        DSPetVoiceSessionApply(&voice->session, kDSPetVoiceSpeechEnd, 0);
+    } else if (voice->session.state == kDSPetVoiceSpeaking) {
+        handleSpeech(voice, kDSPetSpeechStarted, esp_timer_get_time());
+    } else {
+        return;
+    }
+    if (DSPetVoiceSessionApply(&voice->session, kDSPetVoiceSpeechEnd, 0)) {
         voice->fixture = true;
         publish(voice, "fixture_end");
     }
@@ -428,8 +436,9 @@ esp_err_t DSPetLocalVoiceEnableDirect(const DSPetDirectSettings *settings) {
 bool DSPetLocalVoiceDirectActive(void) { return atomic_load(&sUseDirect); }
 
 esp_err_t DSPetLocalVoiceStartFixture(void) {
+    const DSPetVoiceState state = DSPetLocalVoiceGetState();
     if (!DSPetLocalVoiceDirectActive() || DSPetLocalVoiceGetMode() != kDSPetLocalVoiceOn ||
-        DSPetLocalVoiceGetState() != kDSPetVoiceIdle) {
+        (state != kDSPetVoiceIdle && state != kDSPetVoiceSpeaking)) {
         return ESP_ERR_INVALID_STATE;
     }
     atomic_store(&sFixtureRequested, true);

@@ -67,8 +67,8 @@ esp_err_t DSPetLocalVoiceEnableDirect(const DSPetDirectSettings *settings);
 bool DSPetLocalVoiceDirectActive(void);
 
 /**
- * @brief 在直连待机时让现有本地 PCM 经过实际的网络回合。
- * @return ESP_OK 表示已提交；离线、正在会话或未就绪时返回状态错误。
+ * @brief 在直连待机或播报时用本地 PCM 验证真实网络回合或受控插话。
+ * @return ESP_OK 表示已提交；离线、聆听、等待或未就绪时返回状态错误。
  */
 esp_err_t DSPetLocalVoiceStartFixture(void);
 #endif
