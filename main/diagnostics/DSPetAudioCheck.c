@@ -1,6 +1,7 @@
 #include "DSPetAudioCheck.h"
 #include "DSPetAudioDevice.h"
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <math.h>
@@ -79,7 +80,7 @@ static esp_err_t replayCapture(const int16_t *pcm, size_t samples)
              (unsigned)samples, (long)dc, (long)peak, sqrt((double)energy / samples));
     if (peak == 0) {
         ESP_LOGW(kTag, "No variation in left slot; check microphone power, SD and L/R");
-        return ESP_OK;
+        return ESP_ERR_INVALID_RESPONSE;
     }
 
     // 限制播放峰值，也限制安静环境下的增益。
@@ -105,7 +106,9 @@ static esp_err_t replayCapture(const int16_t *pcm, size_t samples)
 
 static esp_err_t checkMicrophone(void)
 {
-    int16_t *pcm = malloc(kRecordSamples * sizeof(*pcm));
+    int16_t *pcm = heap_caps_malloc_prefer(kRecordSamples * sizeof(*pcm), 2,
+                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
+                                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!pcm) {
         return ESP_ERR_NO_MEM;
     }
@@ -121,7 +124,7 @@ static esp_err_t checkMicrophone(void)
     return result;
 }
 
-void DSPetAudioCheckRun(void)
+esp_err_t DSPetAudioCheckRun(void)
 {
     esp_err_t result = DSPetAudioDeviceOpen();
     if (result == ESP_OK) {
@@ -142,4 +145,5 @@ void DSPetAudioCheckRun(void)
     } else {
         ESP_LOGW(kTag, "Audio check failed: %s", esp_err_to_name(result));
     }
+    return result;
 }

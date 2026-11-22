@@ -26,21 +26,12 @@ static void publishEvent(DSPetPlaybackEventKind kind, esp_err_t error)
     xQueueSend(sEvents, &event, portMAX_DELAY);
 }
 
-static void playRequest(const PlaybackRequest *request, bool *deviceOpen)
+static void playRequest(const PlaybackRequest *request)
 {
     if (atomic_load(&sCancelRequested)) {
         publishEvent(kDSPetPlaybackEventCancelled, ESP_OK);
         return;
     }
-    if (!*deviceOpen) {
-        esp_err_t error = DSPetAudioDeviceOpen();
-        if (error != ESP_OK) {
-            publishEvent(kDSPetPlaybackEventFailed, error);
-            return;
-        }
-        *deviceOpen = true;
-    }
-
     esp_err_t writeResult = ESP_OK;
     bool wrote = false;
     for (size_t offset = 0; offset < request->sampleCount && !atomic_load(&sCancelRequested);) {
@@ -63,9 +54,6 @@ static void playRequest(const PlaybackRequest *request, bool *deviceOpen)
     if (wrote || writeResult != ESP_OK) {
         esp_err_t drainResult = DSPetAudioDeviceDrain(kDrainTimeoutMs);
         if (drainResult != ESP_OK) {
-            // 无法确认尾音时回收设备，下一轮再尝试打开。
-            ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetAudioDeviceClose());
-            *deviceOpen = false;
             publishEvent(kDSPetPlaybackEventFailed, drainResult);
             return;
         }
@@ -81,11 +69,10 @@ static void playRequest(const PlaybackRequest *request, bool *deviceOpen)
 
 static void playbackTask(void *context)
 {
-    bool deviceOpen = true;
     PlaybackRequest request;
     for (;;) {
         if (xQueueReceive(sRequests, &request, portMAX_DELAY) == pdTRUE) {
-            playRequest(&request, &deviceOpen);
+            playRequest(&request);
         }
     }
 }
@@ -95,11 +82,6 @@ esp_err_t DSPetPlaybackInit(void)
     if (sRequests) {
         return ESP_ERR_INVALID_STATE;
     }
-    esp_err_t error = DSPetAudioDeviceOpen();
-    if (error != ESP_OK) {
-        return error;
-    }
-
     sRequests = xQueueCreate(1, sizeof(PlaybackRequest));
     sEvents = xQueueCreate(2, sizeof(DSPetPlaybackEvent));
     if (sRequests && sEvents && xTaskCreate(playbackTask, "pcm-playback", 3072, NULL, 4, NULL) == pdPASS) {
@@ -113,7 +95,6 @@ esp_err_t DSPetPlaybackInit(void)
         vQueueDelete(sEvents);
         sEvents = NULL;
     }
-    ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetAudioDeviceClose());
     return ESP_ERR_NO_MEM;
 }
 

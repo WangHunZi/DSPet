@@ -63,4 +63,12 @@ menu "DSPet serial shell"
         bool "Enable the DSPet USB Serial/JTAG shell"
         depends on ESP_CONSOLE_USB_SERIAL_JTAG
         default y
+
+    config DSPET_CONSOLE_TESTS
+        bool "Enable on-demand serial audio tests"
+        depends on DSPET_SERIAL_SHELL && !DSPET_PLAYBACK_DEMO
+        default n
+        help
+            Use the shared audio device for one serial test at a time.
+            Requires the local speech fixture and PSRAM for audio tests.
 endmenu

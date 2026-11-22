@@ -1,5 +1,6 @@
 #include "DSPetPlaybackDemo.h"
 #include "DSPetPlayback.h"
+#include "DSPetAudioDevice.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "sdkconfig.h"
@@ -14,6 +15,7 @@ static const char *const kTag = "playback_demo";
 static size_t sSampleCount;
 static uint32_t sLastPresses;
 static bool sPending;
+static bool sDeviceOpen;
 static bool sSpeaking;
 static int64_t sStartedUs;
 static int64_t sCancelUs;
@@ -30,7 +32,16 @@ esp_err_t DSPetPlaybackDemoInit(void)
         return ESP_ERR_INVALID_SIZE;
     }
     sSampleCount = sizeBytes / sizeof(int16_t);
-    esp_err_t error = DSPetPlaybackInit();
+    esp_err_t error = DSPetAudioDeviceOpen();
+    if (error != ESP_OK) {
+        return error;
+    }
+    error = DSPetPlaybackInit();
+    if (error != ESP_OK) {
+        ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetAudioDeviceClose());
+        return error;
+    }
+    sDeviceOpen = true;
 #ifdef CONFIG_DSPET_AUDIO_DUPLEX_PROBE
     if (error == ESP_OK) {
         esp_err_t probeError = DSPetDuplexProbeStart();
@@ -63,6 +74,8 @@ static void handleEvent(const DSPetPlaybackEvent *event)
         break;
     case kDSPetPlaybackEventFailed:
         ESP_LOGW(kTag, "Playback failed: %s", esp_err_to_name(event->error));
+        ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetAudioDeviceClose());
+        sDeviceOpen = false;
         break;
     }
     sPending = false;
@@ -79,6 +92,14 @@ static void togglePlayback(void)
             ESP_LOGI(kTag, "Requested stop");
         }
         return;
+    }
+    if (!sDeviceOpen) {
+        esp_err_t openError = DSPetAudioDeviceOpen();
+        if (openError != ESP_OK) {
+            ESP_LOGW(kTag, "Open failed: %s", esp_err_to_name(openError));
+            return;
+        }
+        sDeviceOpen = true;
     }
     esp_err_t error = DSPetPlaybackStart(dspetPlaybackDemoStart, sSampleCount);
     if (error != ESP_OK) {

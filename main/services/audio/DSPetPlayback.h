@@ -24,7 +24,7 @@ typedef struct {
 /**
  * @brief 启动 PCM 播放任务。
  * @return ESP_OK 表示任务就绪，其余返回初始化错误。
- * @note 诊断应在初始化前释放设备。应用任务单独调用本模块的公开接口。
+ * @note 同一调用任务使用公开接口。设备由调用方管理，初始化任务时可以尚未打开。
  */
 esp_err_t DSPetPlaybackInit(void);
 
@@ -33,6 +33,7 @@ esp_err_t DSPetPlaybackInit(void);
  * @param[in] samples 非空 PCM 缓冲，保持有效直到收到结束、取消或失败通知。
  * @param[in] sampleCount 样本数，须大于零。
  * @return ESP_OK 表示请求入队。已有一轮未完成时返回 ESP_ERR_INVALID_STATE。
+ * @note 提交前打开音频设备，取到终态后才可关闭。
  */
 esp_err_t DSPetPlaybackStart(const int16_t *samples, size_t sampleCount);
 
