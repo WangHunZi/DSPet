@@ -18,10 +18,11 @@ typedef enum {
 } DSPetLocalVoiceMode;
 
 /**
- * @brief 启动本地会话任务和共用播放服务，默认开启唤醒。
+ * @brief 启动会话任务和共用播放服务。
+ * @param[in] startOffline 为 true 时同时启动离线唤醒。
  * @return ESP_OK 表示任务已启动，模型和设备的准备结果由运行状态报告。
  */
-esp_err_t DSPetLocalVoiceInit(void);
+esp_err_t DSPetLocalVoiceInit(bool startOffline);
 
 /**
  * @brief 请求开启或关闭唤醒和会话。关闭后允许独立音频诊断。

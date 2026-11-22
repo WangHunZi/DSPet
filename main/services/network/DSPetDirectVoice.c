@@ -205,8 +205,12 @@ esp_err_t DSPetDirectVoiceCreate(const DSPetDirectSettings *settings, DSPetDirec
         error = DSPetWifiConnect(voice->settings.ssid, voice->settings.password);
     }
     if (error == ESP_OK) {
-        const struct timeval wallTime = {.tv_sec = voice->settings.unixTime};
-        error                         = settimeofday(&wallTime, NULL) == 0 ? ESP_OK : ESP_FAIL;
+        if (voice->settings.unixTime) {
+            const struct timeval wallTime = {.tv_sec = voice->settings.unixTime};
+            error                         = settimeofday(&wallTime, NULL) == 0 ? ESP_OK : ESP_FAIL;
+        } else {
+            error = DSPetWifiSyncTime();
+        }
     }
     if (error == ESP_OK) {
         // 容量加一个哨兵字节，确保可读写的空间一直是 PCM16 样本的整倍数。

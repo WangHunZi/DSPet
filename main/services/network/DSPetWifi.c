@@ -1,5 +1,6 @@
 #include "DSPetWifi.h"
 
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,15 +8,18 @@
 
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "esp_netif_sntp.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "mbedtls/platform_util.h"
 #include "nvs_flash.h"
+#include "sdkconfig.h"
 
 enum { kGotIp = BIT0, kDisconnected = BIT1, kJoinTimeoutMs = 17000 };
 
-static esp_netif_t                 *sSta;
+static esp_netif_t                 *sNetif;
+static atomic_bool                  sOwned;
 static EventGroupHandle_t           sEvents;
 static esp_event_handler_instance_t sIpHandler;
 static esp_event_handler_instance_t sDisconnectHandler;
@@ -37,41 +41,59 @@ static void networkEvent(void *arg, esp_event_base_t base, int32_t id, void *dat
 
 bool DSPetWifiIsConnected(void) { return sEvents && (xEventGroupGetBits(sEvents) & kGotIp); }
 
+static esp_err_t initializeNetwork(void) {
+    if (sInitialized) {
+        return ESP_OK;
+    }
+    esp_err_t error = nvs_flash_init();
+    if (error == ESP_OK) {
+        error = esp_netif_init();
+    }
+    if (error == ESP_OK) {
+        error = esp_event_loop_create_default();
+        if (error == ESP_ERR_INVALID_STATE) {
+            error = ESP_OK;
+        }
+    }
+    sInitialized = error == ESP_OK;
+    return error;
+}
+
+// 调用方持有网络所有权；任何后续失败都由调用方统一释放。
+static esp_err_t openDriver(wifi_mode_t mode) {
+    esp_err_t error = initializeNetwork();
+    if (error != ESP_OK) {
+        return error;
+    }
+    sNetif = mode == WIFI_MODE_STA ? esp_netif_create_default_wifi_sta() : esp_netif_create_default_wifi_ap();
+    if (!sNetif) {
+        return ESP_ERR_NO_MEM;
+    }
+    // 射频校准使用 NVS。Wi-Fi 驱动本身不持久化凭据。
+    wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
+    config.nvs_enable         = 0;
+    error                     = esp_wifi_init(&config);
+    if (error == ESP_OK) {
+        sDriverReady = true;
+        error        = esp_wifi_set_storage(WIFI_STORAGE_RAM);
+    }
+    return error == ESP_OK ? esp_wifi_set_mode(mode) : error;
+}
+
+static esp_err_t startDriver(void) {
+    const esp_err_t error = esp_wifi_start();
+    sStarted              = error == ESP_OK;
+    return error;
+}
+
 esp_err_t DSPetWifiOpen(void) {
-    if (sSta) {
+    if (atomic_exchange(&sOwned, true)) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (!sInitialized) {
-        // 射频校准使用 NVS。STA 凭据仍按 WIFI_STORAGE_RAM 配置。
-        esp_err_t error = nvs_flash_init();
-        if (error != ESP_OK) {
-            return error;
-        }
-        error = esp_netif_init();
-        if (error != ESP_OK) {
-            return error;
-        }
-        error = esp_event_loop_create_default();
-        if (error != ESP_OK && error != ESP_ERR_INVALID_STATE) {
-            return error;
-        }
-        sInitialized = true;
-    }
-
-    sSta            = esp_netif_create_default_wifi_sta();
-    sEvents         = xEventGroupCreate();
-    esp_err_t error = sSta && sEvents ? ESP_OK : ESP_ERR_NO_MEM;
+    esp_err_t error = openDriver(WIFI_MODE_STA);
     if (error == ESP_OK) {
-        wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
-        config.nvs_enable         = 0;
-        error                     = esp_wifi_init(&config);
-        sDriverReady              = error == ESP_OK;
-    }
-    if (error == ESP_OK) {
-        error = esp_wifi_set_storage(WIFI_STORAGE_RAM);
-    }
-    if (error == ESP_OK) {
-        error = esp_wifi_set_mode(WIFI_MODE_STA);
+        sEvents = xEventGroupCreate();
+        error   = sEvents ? ESP_OK : ESP_ERR_NO_MEM;
     }
     if (error == ESP_OK) {
         error = esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW20);
@@ -84,14 +106,54 @@ esp_err_t DSPetWifiOpen(void) {
             WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, networkEvent, sEvents, &sDisconnectHandler);
     }
     if (error == ESP_OK) {
-        error    = esp_wifi_start();
-        sStarted = error == ESP_OK;
+        error = startDriver();
     }
     if (error == ESP_OK) {
         error = esp_wifi_set_ps(WIFI_PS_NONE);
     }
     if (error != ESP_OK) {
         DSPetWifiClose();
+    }
+    return error;
+}
+
+#ifdef CONFIG_DSPET_PROVISIONING
+esp_err_t DSPetWifiOpenAccessPoint(const char *ssid, const char *password) {
+    const size_t  ssidBytes     = strlen(ssid);
+    const size_t  passwordBytes = strlen(password);
+    wifi_config_t config        = {
+        .ap = {.channel = 1, .authmode = WIFI_AUTH_WPA2_PSK, .max_connection = 2, .pmf_cfg = {.capable = true}}};
+    if (!ssidBytes || ssidBytes > sizeof(config.ap.ssid) || passwordBytes < 8 ||
+        passwordBytes >= sizeof(config.ap.password)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (atomic_exchange(&sOwned, true)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    esp_err_t error = openDriver(WIFI_MODE_AP);
+    if (error == ESP_OK) {
+        memcpy(config.ap.ssid, ssid, ssidBytes);
+        config.ap.ssid_len = ssidBytes;
+        memcpy(config.ap.password, password, passwordBytes);
+        error = esp_wifi_set_config(WIFI_IF_AP, &config);
+        mbedtls_platform_zeroize(&config, sizeof(config));
+    }
+    if (error == ESP_OK) {
+        error = startDriver();
+    }
+    if (error != ESP_OK) {
+        DSPetWifiClose();
+    }
+    return error;
+}
+#endif
+
+esp_err_t DSPetWifiSyncTime(void) {
+    const esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("ntp.aliyun.com");
+    esp_err_t               error  = esp_netif_sntp_init(&config);
+    if (error == ESP_OK) {
+        error = esp_netif_sntp_sync_wait(pdMS_TO_TICKS(12000));
+        esp_netif_sntp_deinit();
     }
     return error;
 }
@@ -184,12 +246,13 @@ void DSPetWifiClose(void) {
         esp_wifi_deinit();
         sDriverReady = false;
     }
-    if (sSta) {
-        esp_netif_destroy_default_wifi(sSta);
-        sSta = NULL;
+    if (sNetif) {
+        esp_netif_destroy_default_wifi(sNetif);
+        sNetif = NULL;
     }
     if (sEvents) {
         vEventGroupDelete(sEvents);
         sEvents = NULL;
     }
+    atomic_store(&sOwned, false);
 }

@@ -4,6 +4,7 @@
 #include <stdbool.h>
 
 #include "esp_err.h"
+#include "sdkconfig.h"
 
 enum {
     kDSPetWifiSsidBytes     = 32,
@@ -16,6 +17,24 @@ enum {
  * @note 由当前网络任务独占，成功后须调用 DSPetWifiClose。
  */
 esp_err_t DSPetWifiOpen(void);
+
+#ifdef CONFIG_DSPET_PROVISIONING
+/**
+ * @brief 打开使用 WPA2 的临时配置热点。
+ * @param[in] ssid 非空接入点名称，最多 32 字节。
+ * @param[in] password 8 至 63 字节的临时口令。
+ * @return ESP_OK 表示热点可用，其余为参数、占用或驱动错误。
+ * @note 与 STA 互斥，同一所有者调用 DSPetWifiClose 释放。
+ */
+esp_err_t DSPetWifiOpenAccessPoint(const char *ssid, const char *password);
+#endif
+
+/**
+ * @brief 在 STA 已取得 IP 后尝试通过 SNTP 校正 UTC 时间。
+ * @return ESP_OK 表示同步完成，其余为初始化或超时错误。
+ * @note 最多等待 12 秒。
+ */
+esp_err_t DSPetWifiSyncTime(void);
 
 /**
  * @brief 扫描接入点并打印匹配前缀的 SSID、信道与信号强度。
@@ -37,7 +56,7 @@ esp_err_t DSPetWifiConnect(const char *ssid, const char *password);
 bool DSPetWifiIsConnected(void);
 
 /**
- * @brief 断开并释放 STA、事件回调及驱动资源。
+ * @brief 断开并释放当前接口、事件回调及驱动资源。
  * @note 同一网络任务调用，关闭后还可重新打开。
  */
 void DSPetWifiClose(void);

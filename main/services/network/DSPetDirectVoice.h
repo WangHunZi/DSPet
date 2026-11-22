@@ -9,7 +9,7 @@ typedef struct {
     char     ssid[kDSPetWifiSsidBytes + 1];         /**< 已知的 2.4 GHz 网络。 */
     char     password[kDSPetWifiPasswordBytes + 1]; /**< Wi-Fi 口令。 */
     char     key[kDSPetDeepSeekKeyBytes + 1];       /**< DeepSeek 临时凭据。 */
-    uint32_t unixTime;                              /**< USB 主机提供的时间，用于校验证书有效期。 */
+    uint32_t unixTime;                              /**< USB 主机提供的时间，零表示用 SNTP 同步。 */
 } DSPetDirectSettings;
 
 /** @brief 独占板载网络的语音服务。 */

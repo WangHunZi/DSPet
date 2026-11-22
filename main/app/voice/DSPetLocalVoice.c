@@ -472,7 +472,7 @@ static void voiceTask(void *context) {
     }
 }
 
-esp_err_t DSPetLocalVoiceInit(void) {
+esp_err_t DSPetLocalVoiceInit(bool startOffline) {
     const esp_err_t error = DSPetPlaybackInit();
     if (error != ESP_OK) {
         return error;
@@ -481,7 +481,7 @@ esp_err_t DSPetLocalVoiceInit(void) {
     if (xTaskCreatePinnedToCore(voiceTask, "local-voice", 6144, NULL, 3, &sTask, core) != pdPASS) {
         return ESP_ERR_NO_MEM;
     }
-    return DSPetLocalVoiceSetEnabled(true);
+    return startOffline ? DSPetLocalVoiceSetEnabled(true) : ESP_OK;
 }
 
 esp_err_t DSPetLocalVoiceSetEnabled(bool enabled) {

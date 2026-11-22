@@ -50,7 +50,7 @@ static void runPet(void) {
              (unsigned) heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
     bool demoEnabled = false;
 #ifdef CONFIG_DSPET_LOCAL_VOICE
-    ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetLocalVoiceInit());
+    ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetLocalVoiceInit(true));
     const DSPetClip       *awake        = findClip("idle");
     const DSPetClip       *speaking     = findClip("wave");
     const DSPetClip *const voiceClips[] = {
