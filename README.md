@@ -266,7 +266,7 @@ python3 tests/human/verify_direct_conversation_human.py --port /dev/cu.usbmodem1
 
 ### 免唤醒直连
 
-直连进入待机后，在板载 Shell 用 `dspet voice always on` 开启。屏幕进入聆听，可以直接对桌宠说话。`dspet voice status` 显示 `always=1`。`dspet voice always off` 停止当前回合并回到唤醒待机。此设置在重启或退出直连时清除。
+直连进入待机后，在板载 Shell 用 `dspet voice always on` 开启。等开口时屏幕保留清醒待机画面，可以直接对桌宠说话。检测到开口后显示收音动作，串口状态变为 `recording`。`dspet voice status` 显示 `always=1`。`dspet voice always off` 停止当前回合并回到唤醒待机。此设置在重启或退出直连时清除。
 
 板端检测人声并分句。候选录音送到 DeepSeek ASR，DeepSeek V4 Flash 根据转写和最近问答决定是否回应。没点名的提问、招呼和日常感叹也可以接话，听不出意思的片段和明确的私人备忘可以静默。忽略时串口记录 `direct_ignored`，随后继续聆听。安静 8 秒以后仍然可以直接说话，下一轮用新的对话上下文。等待一轮网络回复时暂不接收下一句，开始播报后仍可本地插话。
 

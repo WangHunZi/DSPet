@@ -37,6 +37,7 @@ def verify_fixture(board):
     board.command("dspet voice fixture")
     start = board.expect(r"DSPET_VOICE event=fixture_start state=listening turn=(\d+)")
     turn = start.group(1)
+    board.expect(fr"DSPET_VOICE event=speech_start state=recording turn={turn}\b")
     board.expect(fr"DSPET_VOICE event=fixture_end state=waiting turn={turn}\b")
     board.expect(r"DSPET_PET_FRAME clip=idle frame=0 draw_us=\d+")
     asr = board.expect(fr"DSPET_DIRECT_ASR turn={turn} elapsed_us=\d+ text=\S+|DSPET_VOICE event=direct_error", 80)
@@ -74,7 +75,7 @@ def verify_fixture(board):
     if display_lag_us > 0:
         raise RuntimeError("播报早于笑脸首帧刷完。")
     board.expect(r"DSPET_VOICE event=playback_finished state=listening turn=\d+", 40)
-    board.expect(r"DSPET_PET_FRAME clip=stretch frame=0 draw_us=\d+")
+    board.expect(r"DSPET_PET_FRAME clip=idle frame=0 draw_us=\d+")
     board.expect(r"DSPET_VOICE event=listen_timeout state=idle turn=\d+", 12)
     print("DSPET_HOST_TEST direct_fixture=pass", flush=True)
 
@@ -93,7 +94,7 @@ def verify_fixture_barge_in(board):
         board.expect(playback, 8)
 
     board.command("dspet voice fixture")
-    interrupted = r"DSPET_VOICE event=barge_in state=listening turn=(?P<next_turn>\d+)"
+    interrupted = r"DSPET_VOICE event=barge_in state=recording turn=(?P<next_turn>\d+)"
     event = board.expect(f"{interrupted}|{ended}", 6)
     if event.group("result"):
         network = event
@@ -129,6 +130,7 @@ def verify_always_listening(board):
     board.command("dspet voice always on")
     turn = board.expect(r"DSPET_VOICE event=always_start state=listening turn=(\d+)").group(1)
     try:
+        board.expect(r"DSPET_PET_FRAME clip=idle frame=0 draw_us=\d+")
         # 跨过普通聆听的 8 秒超时，免唤醒应继续等本句。
         time.sleep(9)
         board.command("dspet voice status")

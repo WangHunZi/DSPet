@@ -28,8 +28,11 @@ int main(void) {
     DSPetVoiceSession session = {0};
     assert(DSPetVoiceSessionApply(&session, kDSPetVoiceStart, 0));
     assert(session.state == kDSPetVoiceListening);
+    const uint32_t captured = session.turnId;
     assert(!DSPetVoiceSessionApply(&session, kDSPetVoiceSpeechEnd, 0));
     assert(DSPetVoiceSessionApply(&session, kDSPetVoiceSpeechStart, 0));
+    assert(session.state == kDSPetVoiceRecording && session.turnId == captured);
+    assert(!DSPetVoiceSessionApply(&session, kDSPetVoiceSpeechStart, 0));
     assert(!DSPetVoiceSessionApply(&session, kDSPetVoiceListenTimeout, 0));
     assert(DSPetVoiceSessionApply(&session, kDSPetVoiceSpeechEnd, 0));
     assert(session.state == kDSPetVoiceWaiting);
@@ -38,7 +41,7 @@ int main(void) {
     assert(session.state == kDSPetVoiceSpeaking);
     assert(DSPetVoiceSessionApply(&session, kDSPetVoiceReplyEnd, first));
 
-    assert(session.state == kDSPetVoiceListening && !session.recording && session.turnId != first);
+    assert(session.state == kDSPetVoiceListening && session.turnId != first);
     assert(DSPetVoiceSessionApply(&session, kDSPetVoiceSpeechStart, 0));
     assert(DSPetVoiceSessionApply(&session, kDSPetVoiceSpeechEnd, 0));
     assert(!DSPetVoiceSessionApply(&session, kDSPetVoiceReplyReady, first));
@@ -46,7 +49,7 @@ int main(void) {
     assert(DSPetVoiceSessionApply(&session, kDSPetVoiceReplyReady, second));
 
     assert(DSPetVoiceSessionApply(&session, kDSPetVoiceSpeechStart, 0));
-    assert(session.state == kDSPetVoiceListening && session.recording && session.turnId != second);
+    assert(session.state == kDSPetVoiceRecording && session.turnId != second);
     assert(!DSPetVoiceSessionApply(&session, kDSPetVoiceReplyEnd, second));
     assert(DSPetVoiceSessionApply(&session, kDSPetVoiceSpeechEnd, 0));
     assert(!DSPetVoiceSessionApply(&session, kDSPetVoiceReplyReady, second));
@@ -64,7 +67,7 @@ int main(void) {
     assert(!DSPetVoiceSessionApply(&session, kDSPetVoiceReplyFailed, third));
     uint32_t failed = session.turnId;
     assert(DSPetVoiceSessionApply(&session, kDSPetVoiceReplyFailed, failed));
-    assert(session.state == kDSPetVoiceListening && session.turnId != failed && !session.recording);
+    assert(session.state == kDSPetVoiceListening && session.turnId != failed);
     assert(DSPetVoiceSessionApply(&session, kDSPetVoiceStop, 0));
     assert(session.state == kDSPetVoiceIdle);
     return 0;

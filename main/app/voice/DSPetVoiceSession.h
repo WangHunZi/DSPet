@@ -7,7 +7,8 @@
 /** @brief 应用层语音会话状态。 */
 typedef enum {
     kDSPetVoiceIdle,      /**< 等待唤醒或手动发起。 */
-    kDSPetVoiceListening, /**< 等待开口或录制本句。 */
+    kDSPetVoiceListening, /**< 等待用户开口。 */
+    kDSPetVoiceRecording, /**< 已检测到开口，正在收录本句。 */
     kDSPetVoiceWaiting,   /**< 录音完成，等待本轮回复。 */
     kDSPetVoiceSpeaking,  /**< 播报本轮回复，仍监听插话。 */
 } DSPetVoiceState;
@@ -30,7 +31,6 @@ typedef struct {
     DSPetVoiceState state;           /**< 当前状态。 */
     uint32_t        turnId;          /**< 回合编号，结束会话后保留用于生成下一个编号。 */
     bool            alwaysListening; /**< 开启时不因安静退回唤醒待机。 */
-    bool            recording;       /**< 聆听阶段已确认开口。 */
 } DSPetVoiceSession;
 
 /**

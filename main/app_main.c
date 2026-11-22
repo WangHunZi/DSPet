@@ -24,7 +24,7 @@ static const char *const kTag = "pet";
 
 #ifdef CONFIG_DSPET_LOCAL_VOICE
 // 挥手素材从第 3 秒起已进入笑脸动作，也正好落在关键帧上。
-enum { kSpeakingCueSeconds = 3, kWaitingPollMs = 10 };
+enum { kSpeakingCueSeconds = 3, kVoiceDisplayPollMs = 10 };
 #endif
 
 #if defined(CONFIG_DSPET_PLAYBACK_DEMO) || defined(CONFIG_DSPET_LOCAL_VOICE)
@@ -51,13 +51,18 @@ static void runPet(void) {
     bool demoEnabled = false;
 #ifdef CONFIG_DSPET_LOCAL_VOICE
     ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetLocalVoiceInit());
-    const DSPetClip *listening        = findClip("stretch");
-    const DSPetClip *waiting          = findClip("idle");
-    const DSPetClip *speaking         = findClip("wave");
-    const unsigned   speakingCue      = kSpeakingCueSeconds * speaking->fps;
-    DSPetVoiceState  lastVoice        = kDSPetVoiceIdle;
-    uint32_t         lastSpeakingTurn = 0;
-    int64_t          voiceStartedUs   = 0;
+    const DSPetClip       *awake        = findClip("idle");
+    const DSPetClip       *speaking     = findClip("wave");
+    const DSPetClip *const voiceClips[] = {
+        [kDSPetVoiceListening] = awake,
+        [kDSPetVoiceRecording] = findClip("stretch"),
+        [kDSPetVoiceWaiting]   = awake,
+        [kDSPetVoiceSpeaking]  = speaking,
+    };
+    const unsigned  speakingCue      = kSpeakingCueSeconds * speaking->fps;
+    DSPetVoiceState lastVoice        = kDSPetVoiceIdle;
+    uint32_t        lastSpeakingTurn = 0;
+    int64_t         voiceStartedUs   = 0;
 #endif
 #ifdef CONFIG_DSPET_SERIAL_SHELL
     ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetConsoleStart());
@@ -119,14 +124,14 @@ static void runPet(void) {
             lastVoice        = voice;
             lastSpeakingTurn = speakingTurn;
             voiceStartedUs   = esp_timer_get_time();
-        } else if (voice == kDSPetVoiceWaiting) {
-            // 等待云端时保留清醒画面，避免播报开始时还在追赶等待动画的差分帧。
-            vTaskDelay(pdMS_TO_TICKS(kWaitingPollMs));
+        } else if (voice == kDSPetVoiceListening || voice == kDSPetVoiceWaiting) {
+            // 等开口和等回复时保留清醒画面，随时可以切入下一个动作。
+            vTaskDelay(pdMS_TO_TICKS(kVoiceDisplayPollMs));
             continue;
         }
         if (voice != kDSPetVoiceIdle) {
             startedUs = voiceStartedUs;
-            clip      = voice == kDSPetVoiceListening ? listening : voice == kDSPetVoiceWaiting ? waiting : speaking;
+            clip      = voiceClips[voice];
             if (voice == kDSPetVoiceSpeaking && speakingCue < speaking->frameCount) {
                 firstFrame = speakingCue;
             }

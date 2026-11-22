@@ -18,7 +18,7 @@ def verify_session(board):
     second = board.expect(r"DSPET_VOICE event=playback_finished state=listening turn=(\d+)", 30).group(1)
     board.expect(fr"DSPET_VOICE_CAPTURE turn={second} samples=\d+ preroll=\d+ capped=0", 14)
     board.expect(fr"DSPET_VOICE event=playback_started state=speaking turn={second}\b", 16)
-    third = board.expect(r"DSPET_VOICE event=barge_in state=listening turn=(\d+)", 14).group(1)
+    third = board.expect(r"DSPET_VOICE event=barge_in state=recording turn=(\d+)", 14).group(1)
     board.expect(fr"DSPET_VOICE_DRAIN turn={second}\b", 2)
     board.expect(fr"DSPET_VOICE_CAPTURE turn={third} samples=\d+ preroll=\d+ capped=0", 10)
     board.expect(fr"DSPET_VOICE event=playback_started state=speaking turn={third}\b", 12)

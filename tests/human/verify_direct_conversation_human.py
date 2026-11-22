@@ -22,7 +22,7 @@ def verify(board):
     expect_asr(board, first)
     board.expect(fr"DSPET_VOICE event=playback_started state=speaking turn={first}\b", 50)
     print("听她说两三秒，再插话说「等一下，一加一等于几？」", flush=True)
-    second = board.expect(r"DSPET_VOICE event=barge_in state=listening turn=(\d+)", 30).group(1)
+    second = board.expect(r"DSPET_VOICE event=barge_in state=recording turn=(\d+)", 30).group(1)
     board.expect(fr"DSPET_VOICE_DRAIN turn={first}\b", 2)
     expect_asr(board, second)
     board.expect(fr"DSPET_VOICE event=playback_started state=speaking turn={second}\b", 45)

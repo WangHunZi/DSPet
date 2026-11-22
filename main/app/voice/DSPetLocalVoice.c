@@ -64,6 +64,7 @@ const char *DSPetLocalVoiceStateName(DSPetVoiceState state) {
     switch (state) {
         case kDSPetVoiceIdle:      return "idle";
         case kDSPetVoiceListening: return "listening";
+        case kDSPetVoiceRecording: return "recording";
         case kDSPetVoiceWaiting:   return "waiting";
         case kDSPetVoiceSpeaking:  return "speaking";
     }
@@ -260,7 +261,8 @@ static void startFixture(LocalVoice *voice) {
     if (voice->session.state == kDSPetVoiceIdle) {
         startSession(voice, "fixture_start");
     }
-    if (voice->session.recording || (voice->session.state == kDSPetVoiceSpeaking && !voice->playbackTurnId)) {
+    if (voice->session.state == kDSPetVoiceRecording ||
+        (voice->session.state == kDSPetVoiceSpeaking && !voice->playbackTurnId)) {
         return;
     }
     handleSpeech(voice, kDSPetSpeechStarted, esp_timer_get_time());
@@ -309,8 +311,7 @@ static esp_err_t advanceSession(LocalVoice *voice, int64_t nowUs) {
 #endif
     if (voice->session.state == kDSPetVoiceWaiting && !voice->playbackTurnId && nowUs >= voice->deadlineUs) {
         markReplyReady(voice, voice->session.turnId);
-    } else if (voice->session.state == kDSPetVoiceListening && !voice->session.recording &&
-               nowUs >= voice->deadlineUs) {
+    } else if (voice->session.state == kDSPetVoiceListening && nowUs >= voice->deadlineUs) {
 #ifdef CONFIG_DSPET_DIRECT_TEST
         if (voice->session.alwaysListening) {
             voice->newSession = true;
@@ -334,7 +335,8 @@ static esp_err_t processBlock(LocalVoice *voice, const DSPetAudioTapBlock *block
     }
     const int64_t       nowUs = esp_timer_get_time();
     DSPetNearSpeechMode mode  = kDSPetNearSpeechDisarmed;
-    if (voice->session.recording || (nowUs >= voice->armedUs && voice->session.state != kDSPetVoiceWaiting)) {
+    if (voice->session.state == kDSPetVoiceRecording ||
+        (nowUs >= voice->armedUs && voice->session.state != kDSPetVoiceWaiting)) {
         mode = voice->playbackTurnId ? kDSPetNearSpeechPlaying : kDSPetNearSpeechListening;
     }
 #ifdef CONFIG_DSPET_DIRECT_TEST
