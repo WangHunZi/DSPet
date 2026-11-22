@@ -107,6 +107,20 @@ flowchart TB
 
 ## 按提交执行
 
+### 测试目录与板载 Shell
+
+先建立测试入口，再做 M1b。XIAO 固件通过现有 USB Serial/JTAG 运行 ESP-IDF Console，注册一个 `dspet` 命令并处理其子命令。人用串口终端输入，AI 可以通过同一个串口发送相同的命令。板上运行测试并报告结果，电脑可以保存输出。[ESP-IDF 6.0.2 Console 示例](https://github.com/espressif/esp-idf/blob/v6.0.2/examples/system/console/basic/main/console_example_main.c)
+
+| 测试目录 | 执行和判定 |
+| --- | --- |
+| `tests/software/` | 主机执行纯逻辑、协议解析与素材测试。迁入现有 C11 与 Python 测试，继续支持无需接板的快速回归 |
+| `tests/hardware/` | 板载命令启动设备诊断。固件根据 DMA、PSRAM、丢块和排空等证据给出判定 |
+| `tests/human/` | 板载命令启动并提示操作。人通过串口提交看见或听见的结果，固件同时报告能自动取得的证据 |
+
+首批板载命令拟定为 `dspet help`、`dspet info`、`dspet test hardware audio duplex`、`dspet test human audio loopback` 和 `dspet test confirm <run-id> pass|fail`。耗时测试由应用或诊断任务执行，命令处理只解析参数和启动用例。完成时输出独立的结果行，包含用例、运行编号、状态和关键测量值。需要人确认的用例在收到确认前保持等待，串口脚本可以据此收集结果。音频用例通过已有设备和播放服务执行，并由应用协调资源所有权。
+
+首笔提交迁移主机测试并验收原有用例。第二笔接板载 Console，先用 `dspet info` 确认串口收发和动画可以同时运行。随后接双路自动测试及人工录音回放。格式检查和全量格式化单独提交，以仓库新增的格式化配置为基准，同步说明中的旧格式约定。实现遵循 [Rules.md](../Rules.md)。
+
 本地播放演示已通过播放、BOOT 停播和重新播放的实物验证。测试固件为 `6c4f9a5`。串口记录三次取消请求到 DMA 排空间隔为 42.5、43.5、42.5 ms。此数字从应用发出取消请求算起，语音检测延迟留待后续测量。播报期间动画约 24 fps，完整自然结束事件待补采一次。复测步骤见 [本地播报与停播演示](../README.md#本地播报与停播演示)。
 
 | 阶段 | 改动范围 | 完成证据 |
