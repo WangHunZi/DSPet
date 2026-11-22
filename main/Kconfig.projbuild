@@ -35,6 +35,13 @@ menu "DSPet audio"
         help
             Generate .cache/playback-demo.pcm with tools/make_playback_demo.sh.
             When enabled, BOOT toggles demo playback instead of switching animations.
+    config DSPET_AUDIO_DUPLEX_PROBE
+        bool "Measure microphone and playback DMA timing in the speech demo"
+        depends on DSPET_PLAYBACK_DEMO
+        default n
+        help
+            Enable simultaneous I2S capture and report block statistics.
+            Microphone and reference samples stay inside the device.
 endmenu
 
 menu "DSPet playback"

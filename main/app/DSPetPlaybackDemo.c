@@ -2,6 +2,10 @@
 #include "DSPetPlayback.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "sdkconfig.h"
+#ifdef CONFIG_DSPET_AUDIO_DUPLEX_PROBE
+#include "DSPetDuplexProbe.h"
+#endif
 
 extern const int16_t dspetPlaybackDemoStart[];
 extern const int16_t dspetPlaybackDemoEnd[];
@@ -21,7 +25,16 @@ esp_err_t DSPetPlaybackDemoInit(void)
         return ESP_ERR_INVALID_SIZE;
     }
     sSampleCount = sizeBytes / sizeof(int16_t);
-    return DSPetPlaybackInit();
+    esp_err_t error = DSPetPlaybackInit();
+#ifdef CONFIG_DSPET_AUDIO_DUPLEX_PROBE
+    if (error == ESP_OK) {
+        esp_err_t probeError = DSPetDuplexProbeStart();
+        if (probeError != ESP_OK) {
+            ESP_LOGW(kTag, "Duplex probe unavailable: %s", esp_err_to_name(probeError));
+        }
+    }
+#endif
+    return error;
 }
 
 static void handleEvent(const DSPetPlaybackEvent *event)

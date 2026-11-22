@@ -69,6 +69,9 @@ if(CONFIG_DSPET_PLAYBACK_DEMO)
     target_sources(${COMPONENT_LIB} PRIVATE "app/DSPetPlaybackDemo.c" "${demo_source}")
     target_compile_definitions(${COMPONENT_LIB} PRIVATE DSPET_PLAYBACK_DEMO_PCM_PATH="${demo_pcm}")
 endif()
+if(CONFIG_DSPET_AUDIO_DUPLEX_PROBE)
+    target_sources(${COMPONENT_LIB} PRIVATE "diagnostics/DSPetDuplexProbe.c")
+endif()
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/asset_config.h"
     "#pragma once\n#include \"DSPetClip.h\"\n${declarations}"
     "static const DSPetClip pet_clips[] = {\n${records}};\n"
