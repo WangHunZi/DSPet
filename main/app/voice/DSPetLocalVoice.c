@@ -124,7 +124,7 @@ static void handleSpeech(LocalVoice *voice, DSPetSpeechEvent event, int64_t nowU
 static void directFailed(LocalVoice *voice, uint32_t turn, esp_err_t error) {
     if (DSPetVoiceSessionApply(&voice->session, kDSPetVoiceReplyFailed, turn)) {
         ESP_LOGW(kTag, "Direct turn %" PRIu32 " failed: %s", turn, esp_err_to_name(error));
-        beginListening(voice, esp_timer_get_time(), kReplyTailUs, true);
+        beginListening(voice, esp_timer_get_time(), kReplyTailUs, false);
         publish(voice, "direct_error");
     }
 }
@@ -174,11 +174,7 @@ static esp_err_t takePlaybackEvents(LocalVoice *voice) {
 static void markReplyReady(LocalVoice *voice, uint32_t turn) {
     voice->playbackTurnId = turn;
     voice->armedUs        = INT64_MAX;
-    bool restartTimeline  = false;
-#ifdef CONFIG_DSPET_DIRECT_TEST
-    restartTimeline = voice->direct != NULL;
-#endif
-    DSPetNearSpeechReset(voice->speech, restartTimeline);
+    DSPetNearSpeechReset(voice->speech, false);
     DSPetVoiceSessionApply(&voice->session, kDSPetVoiceReplyReady, turn);
     publish(voice, "reply_ready");
 }
@@ -273,23 +269,34 @@ static esp_err_t processBlock(LocalVoice *voice, const DSPetAudioTapBlock *block
         }
         return ESP_OK;
     }
-#ifdef CONFIG_DSPET_DIRECT_TEST
-    if (voice->direct && voice->session.state == kDSPetVoiceWaiting && !voice->playbackTurnId) {
-        // 直连等待期只排空 DMA 观测。真正播报时再重新对齐并开始消回声。
-        return ESP_OK;
-    }
-#endif
-
     const int64_t       nowUs = esp_timer_get_time();
     DSPetNearSpeechMode mode  = kDSPetNearSpeechDisarmed;
     if (voice->session.recording || (nowUs >= voice->armedUs && voice->session.state != kDSPetVoiceWaiting)) {
         mode = voice->playbackTurnId ? kDSPetNearSpeechPlaying : kDSPetNearSpeechListening;
     }
+#ifdef CONFIG_DSPET_DIRECT_TEST
+    if (voice->direct && voice->session.state == kDSPetVoiceWaiting && !voice->playbackTurnId) {
+        mode = kDSPetNearSpeechAlignOnly;
+    }
+#endif
     DSPetSpeechEvent event;
     esp_err_t        error = DSPetNearSpeechPush(voice->speech, block, mode, &event);
     if (error == ESP_OK) {
         handleSpeech(voice, event, nowUs);
     }
+#ifdef CONFIG_DSPET_DIRECT_TEST
+    if (voice->direct && error == ESP_ERR_INVALID_RESPONSE) {
+        ESP_LOGW(kTag,
+                 "DMA tap discontinuity, realigning turn %" PRIu32 " while %s",
+                 voice->session.turnId,
+                 DSPetLocalVoiceStateName(voice->session.state));
+        DSPetNearSpeechRealign(voice->speech);
+        if (voice->playbackTurnId && voice->armedUs < nowUs + kReplyTailUs) {
+            voice->armedUs = nowUs + kReplyTailUs;
+        }
+        return ESP_OK;
+    }
+#endif
     return error;
 }
 

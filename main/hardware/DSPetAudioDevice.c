@@ -9,8 +9,14 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "sdkconfig.h"
 
-enum { kDmaBlocks = 4, kTapQueueBlocks = 16, kMicDataPin = GPIO_NUM_44 };
+#ifdef CONFIG_DSPET_DIRECT_TEST
+enum { kTapQueueBlocks = 48 };
+#else
+enum { kTapQueueBlocks = 16 };
+#endif
+enum { kDmaBlocks = 4, kMicDataPin = GPIO_NUM_44 };
 
 static const char *const kTag = "audio_device";
 static i2s_chan_handle_t sTx;

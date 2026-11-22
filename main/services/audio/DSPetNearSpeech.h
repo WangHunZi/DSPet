@@ -12,7 +12,8 @@ enum { kDSPetNearSpeechMaxRecordingSamples = 4 * kDSPetAudioDeviceSampleRateHz }
 
 /** @brief 本帧的聆听条件。 */
 typedef enum {
-    kDSPetNearSpeechDisarmed,  /**< 仅对齐和预热，不产生开口事件。 */
+    kDSPetNearSpeechAlignOnly, /**< 保持 DMA 对齐，跳过消回声和人声判断。 */
+    kDSPetNearSpeechDisarmed,  /**< 对齐和预热，不产生开口事件。 */
     kDSPetNearSpeechListening, /**< 喇叭静音，等待开口或录制。 */
     kDSPetNearSpeechPlaying,   /**< 喇叭正在播报，使用插话门限。 */
 } DSPetNearSpeechMode;
@@ -30,6 +31,12 @@ esp_err_t DSPetNearSpeechCreate(DSPetNearSpeech **speech);
  * @param[in] restartTimeline 自上次调用以来未消费全部 DMA 块时设为 true。
  */
 void DSPetNearSpeechReset(DSPetNearSpeech *speech, bool restartTimeline);
+
+/**
+ * @brief 在观测中断后重新对齐，清除跨断点的人声证据和预录。
+ * @param[in,out] speech 已创建的实例，保留本句已经确认的录音。
+ */
+void DSPetNearSpeechRealign(DSPetNearSpeech *speech);
 
 /**
  * @brief 消费一个麦克风或播放 DMA 块，按对齐后的 PCM 产生人声事件。

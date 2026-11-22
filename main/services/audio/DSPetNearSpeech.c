@@ -62,6 +62,16 @@ void DSPetNearSpeechReset(DSPetNearSpeech *speech, bool restartTimeline) {
     speech->peakRms        = 0;
 }
 
+void DSPetNearSpeechRealign(DSPetNearSpeech *speech) {
+    DSPetAecSyncInit(&speech->sync, kPlaybackToMicUs - kFilterLeadUs);
+    speech->pendingSamples       = 0;
+    speech->capture.index        = 0;
+    speech->capture.filled       = 0;
+    speech->capture.voicedFrames = 0;
+    speech->capture.quietFrames  = 0;
+    speech->capture.strongInRun  = false;
+}
+
 static void classify(
     DSPetNearSpeech *speech, const int16_t *pcm, size_t samples, DSPetNearSpeechMode mode, DSPetSpeechEvent *event) {
     const bool armed = mode != kDSPetNearSpeechDisarmed;
@@ -112,6 +122,9 @@ esp_err_t DSPetNearSpeechPush(DSPetNearSpeech          *speech,
     }
     if (sync != kDSPetAecSyncReady) {
         return ESP_ERR_INVALID_RESPONSE;
+    }
+    if (mode == kDSPetNearSpeechAlignOnly) {
+        return ESP_OK;
     }
     esp_err_t result = DSPetAecProcess(speech->aec, mic, reference, output, speech->aecSamples);
     if (result == ESP_OK) {
