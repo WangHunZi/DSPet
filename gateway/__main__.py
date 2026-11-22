@@ -2,6 +2,7 @@
 
 import argparse
 import getpass
+import logging
 import os
 from pathlib import Path
 import sys
@@ -11,6 +12,7 @@ from .audio import read_wav, wrap_wav
 from .conversation import Conversation
 from .deepseek import DeepSeek
 from .errors import GatewayError
+from .server import create_server
 
 
 def _conversation(ask_key):
@@ -42,6 +44,15 @@ def _run_wav(args, conversation):
         )
 
 
+def _serve(args, conversation):
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    device_token = os.environ.get("DSPET_DEVICE_TOKEN", "")
+    with create_server((args.bind, args.port), conversation, device_token) as server:
+        host, port = server.server_address
+        print(f"DSPet 网关监听 http://{host}:{port}", flush=True)
+        server.serve_forever()
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ask-key", action="store_true", help="在终端隐藏输入 DeepSeek Key")
@@ -49,9 +60,14 @@ def main(argv=None):
     wav = commands.add_parser("wav", help="把一组 WAV 按顺序放在同一会话里")
     wav.add_argument("audio", type=Path, nargs="+", help="16 kHz 单声道 PCM16 WAV")
     wav.add_argument("--output-dir", type=Path, default=Path(".cache/voice-replies"))
+    wav.set_defaults(run=_run_wav)
+    serve = commands.add_parser("serve", help="启动 DSPet 局域网语音网关")
+    serve.add_argument("--bind", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8765)
+    serve.set_defaults(run=_serve)
     args = parser.parse_args(argv)
     try:
-        _run_wav(args, _conversation(args.ask_key))
+        args.run(args, _conversation(args.ask_key))
     except (GatewayError, OSError) as error:
         print(f"网关错误 {error}", file=sys.stderr)
         return 1
