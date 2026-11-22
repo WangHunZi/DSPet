@@ -2,6 +2,20 @@
 
 用 XIAO ESP32S3 Plus 复刻一只会聊天的桌宠。手机扫码配网后，直接对鲸鱼娘说话。设备通过 DeepSeek 完成语音识别、对话和播报。
 
+## 下载固件并刷机
+
+- [Release 固件](https://github.com/WangHunZi/DSPet/releases/download/v0.1.0/dspet-v0.1.0-xiao-esp32s3-plus-release.zip) · 日常使用，第一次复刻建议下载这个版本。
+- [Debug 固件](https://github.com/WangHunZi/DSPet/releases/download/v0.1.0/dspet-v0.1.0-xiao-esp32s3-plus-debug.zip) · 串口联调，日志更详细。
+
+适用于 16 MB Flash 的 XIAO ESP32S3 Plus。解压 ZIP，用 USB 数据线连接板子。需要 Python 和 esptool，可在 Python 虚拟环境中用 `python -m pip install esptool` 安装。以下以 Release 为例，把串口换成实际端口（如 `/dev/cu.usbmodem*` 或 `COM3`）。
+
+```sh
+python -m esptool --chip esp32s3 --port /dev/ttyACM0 --before usb-reset --after hard-reset \
+  write-flash 0x0 dspet-v0.1.0-xiao-esp32s3-plus-release.bin
+```
+
+刷 Debug 时换成包内的 Debug 文件名。完整镜像会清除板上已有的 Wi-Fi 和 API Key。若无法进入下载模式，按住 BOOT，点按 RESET，松开 BOOT 后重试。烧录完成后按[配网步骤](#配网与使用)扫码。
+
 ![鲸鱼娘待机动画](assets/generated/idle-preview.gif)
 
 ## 材料与接线
@@ -56,7 +70,7 @@ idf.py -B .cache/build-setup -D SDKCONFIG=.cache/sdkconfig.setup \
   -p "$PORT" flash monitor
 ```
 
-若自动烧录连接失败，按住 BOOT，点按 RESET，松开 BOOT 后重试。串口监视器用 Ctrl+] 退出。
+串口监视器用 Ctrl+] 退出。
 
 ## 配网与使用
 
