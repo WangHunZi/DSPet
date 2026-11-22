@@ -9,6 +9,7 @@
 
 #include "DSPetNearSpeech.h"
 #include "DSPetPcm24kTo16k.h"
+#include "DSPetPcmReplay.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -49,6 +50,8 @@ struct DSPetDirectVoice {
     atomic_bool          complete;
     esp_err_t            result;
     uint32_t             turnId;
+    uint32_t             priorTurnId;
+    bool                 priorInterrupted;
     size_t               samples;
     DSPetPcm24kTo16k     converter;
     size_t               produced;
@@ -93,9 +96,13 @@ static esp_err_t runTurn(DSPetDirectVoice *voice) {
             return error;
         }
     }
-    VoiceBuffers *buffer  = voice->buffers;
-    const int64_t startUs = esp_timer_get_time();
-    esp_err_t     error   = DSPetDeepSeekTranscribe(
+    VoiceBuffers       *buffer  = voice->buffers;
+    const int64_t       startUs = esp_timer_get_time();
+    DSPetPcmReplayLevel level;
+    if (!DSPetPcmReplayNormalize(buffer->recording, voice->samples, &level)) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    esp_err_t error = DSPetDeepSeekTranscribe(
         voice->settings.key, buffer->recording, voice->samples, buffer->question, sizeof(buffer->question), &cancel);
     if (error != ESP_OK) {
         return error;
@@ -108,7 +115,7 @@ static esp_err_t runTurn(DSPetDirectVoice *voice) {
     const DSPetDeepSeekHistory history = {
         .question    = buffer->priorQuestion,
         .reply       = buffer->priorReply,
-        .interrupted = false,
+        .interrupted = voice->priorInterrupted,
     };
     error = DSPetDeepSeekReply(voice->settings.key,
                                buffer->question,
@@ -127,6 +134,8 @@ static esp_err_t runTurn(DSPetDirectVoice *voice) {
     if (voice->produced) {
         memcpy(buffer->priorQuestion, buffer->question, strlen(buffer->question) + 1);
         memcpy(buffer->priorReply, buffer->reply, strlen(buffer->reply) + 1);
+        voice->priorTurnId      = voice->turnId;
+        voice->priorInterrupted = error != ESP_OK;
     }
     return error;
 }
@@ -201,13 +210,16 @@ esp_err_t DSPetDirectVoiceSubmit(
     if (xStreamBufferReset(voice->audio) != pdPASS) {
         return ESP_ERR_INVALID_STATE;
     }
+    if (newSession) {
+        voice->buffers->priorReply[0] = '\0';
+        voice->priorTurnId            = 0;
+    } else if (voice->priorTurnId == voice->turnId && atomic_load(&voice->cancelled)) {
+        voice->priorInterrupted = true;
+    }
     voice->turnId    = turnId;
     voice->samples   = sampleCount;
     voice->converter = (DSPetPcm24kTo16k) {0};
     voice->produced  = 0;
-    if (newSession || atomic_load(&voice->cancelled) || voice->result != ESP_OK) {
-        voice->buffers->priorReply[0] = '\0';
-    }
     memcpy(voice->buffers->recording, samples, sampleCount * sizeof(*samples));
     atomic_store(&voice->waits, 0);
     atomic_store(&voice->cancelled, false);
@@ -230,6 +242,7 @@ DSPetDirectVoiceStatus DSPetDirectVoiceGetStatus(DSPetDirectVoice *voice) {
 
 esp_err_t DSPetDirectVoiceRead(void *context, int16_t *samples, size_t capacitySamples, size_t *sampleCount) {
     DSPetDirectVoice *voice = context;
+    *sampleCount            = 0;
     if (cancelRequested(voice)) {
         return ESP_OK;
     }

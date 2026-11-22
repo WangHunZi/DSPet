@@ -46,6 +46,13 @@ bool DSPetVoiceSessionApply(DSPetVoiceSession *session, DSPetVoiceEvent event, u
                 return true;
             }
             break;
+        case kDSPetVoiceReplyFailed:
+            if ((session->state == kDSPetVoiceWaiting || session->state == kDSPetVoiceSpeaking) &&
+                replyTurnId == session->turnId) {
+                listen(session, false);
+                return true;
+            }
+            break;
         case kDSPetVoiceListenTimeout:
             if (session->state != kDSPetVoiceListening || session->recording) {
                 break;

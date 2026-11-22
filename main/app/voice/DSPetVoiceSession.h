@@ -19,6 +19,7 @@ typedef enum {
     kDSPetVoiceSpeechEnd,     /**< 本句录音完成。 */
     kDSPetVoiceReplyReady,    /**< 一轮回复可播放。 */
     kDSPetVoiceReplyEnd,      /**< 一轮回复已播完。 */
+    kDSPetVoiceReplyFailed,   /**< 一轮请求或播报失败，回到聆听。 */
     kDSPetVoiceListenTimeout, /**< 聆听超时且未开口。 */
     kDSPetVoiceStop,          /**< 停止会话或处理出错。 */
 } DSPetVoiceEvent;

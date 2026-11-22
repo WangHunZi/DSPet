@@ -3,6 +3,11 @@
 
 #include "DSPetVoiceSession.h"
 #include "esp_err.h"
+#include "sdkconfig.h"
+
+#ifdef CONFIG_DSPET_DIRECT_TEST
+#include "DSPetDirectVoice.h"
+#endif
 
 /** @brief 语音任务占用音频设备的状态。 */
 typedef enum {
@@ -49,5 +54,23 @@ DSPetVoiceState DSPetLocalVoiceGetState(void);
  * @return 生命周期内有效的英文状态名。
  */
 const char *DSPetLocalVoiceStateName(DSPetVoiceState state);
+
+#ifdef CONFIG_DSPET_DIRECT_TEST
+/**
+ * @brief 在语音设备关闭时以直连提供方启动会话。
+ * @param[in] settings 输入配置，返回前已复制，停用时擦除。
+ * @return ESP_OK 表示已发起，ESP_ERR_INVALID_STATE 表示语音任务尚未释放。
+ */
+esp_err_t DSPetLocalVoiceEnableDirect(const DSPetDirectSettings *settings);
+
+/** @brief 直连正在启动或持有 Wi-Fi 时返回 true。 */
+bool DSPetLocalVoiceDirectActive(void);
+
+/**
+ * @brief 在直连待机时让现有本地 PCM 经过实际的网络回合。
+ * @return ESP_OK 表示已提交；离线、正在会话或未就绪时返回状态错误。
+ */
+esp_err_t DSPetLocalVoiceStartFixture(void);
+#endif
 
 #endif

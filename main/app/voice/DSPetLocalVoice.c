@@ -12,6 +12,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "sdkconfig.h"
+#ifdef CONFIG_DSPET_DIRECT_TEST
+#include "mbedtls/platform_util.h"
+#endif
 
 enum {
     kTapWaitMs       = 20,
@@ -30,6 +33,12 @@ typedef struct {
     int64_t           deadlineUs;
     int64_t           cancelledUs;
     uint32_t          playbackTurnId;
+#ifdef CONFIG_DSPET_DIRECT_TEST
+    DSPetDirectVoice *direct;
+    uint32_t          submittedTurnId;
+    bool              newSession;
+    bool              fixture;
+#endif
 } LocalVoice;
 
 extern const int16_t kReplyPcmStart[] asm("_binary_local_voice_reply_pcm_start");
@@ -40,6 +49,11 @@ static TaskHandle_t      sTask;
 static atomic_int        sMode;
 static atomic_int        sState;
 static atomic_bool       sStartRequested;
+#ifdef CONFIG_DSPET_DIRECT_TEST
+static atomic_bool         sUseDirect;
+static atomic_bool         sFixtureRequested;
+static DSPetDirectSettings sDirectSettings;
+#endif
 
 const char *DSPetLocalVoiceStateName(DSPetVoiceState state) {
     switch (state) {
@@ -67,6 +81,10 @@ static void beginListening(LocalVoice *voice, int64_t nowUs, int64_t delayUs, bo
 
 static void startSession(LocalVoice *voice, const char *source) {
     if (DSPetVoiceSessionApply(&voice->session, kDSPetVoiceStart, 0)) {
+#ifdef CONFIG_DSPET_DIRECT_TEST
+        voice->newSession = true;
+        voice->fixture    = false;
+#endif
         beginListening(voice, esp_timer_get_time(), kWakeTailUs, true);
         publish(voice, source);
     }
@@ -79,6 +97,11 @@ static void handleSpeech(LocalVoice *voice, DSPetSpeechEvent event, int64_t nowU
             if (interrupting) {
                 voice->cancelledUs = esp_timer_get_time();
                 DSPetPlaybackCancel();
+#ifdef CONFIG_DSPET_DIRECT_TEST
+                if (voice->direct) {
+                    DSPetDirectVoiceCancel(voice->direct, voice->playbackTurnId);
+                }
+#endif
             }
             publish(voice, interrupting ? "barge_in" : "speech_start");
         }
@@ -96,6 +119,16 @@ static void handleSpeech(LocalVoice *voice, DSPetSpeechEvent event, int64_t nowU
     }
 }
 
+#ifdef CONFIG_DSPET_DIRECT_TEST
+static void directFailed(LocalVoice *voice, uint32_t turn, esp_err_t error) {
+    if (DSPetVoiceSessionApply(&voice->session, kDSPetVoiceReplyFailed, turn)) {
+        ESP_LOGW(kTag, "Direct turn %" PRIu32 " failed: %s", turn, esp_err_to_name(error));
+        beginListening(voice, esp_timer_get_time(), kReplyTailUs, false);
+        publish(voice, "direct_error");
+    }
+}
+#endif
+
 static esp_err_t takePlaybackEvents(LocalVoice *voice) {
     DSPetPlaybackEvent event;
     while (DSPetPlaybackTakeEvent(&event)) {
@@ -106,14 +139,21 @@ static esp_err_t takePlaybackEvents(LocalVoice *voice) {
         }
         const uint32_t played = voice->playbackTurnId;
         voice->playbackTurnId = 0;
-        if (event.kind == kDSPetPlaybackEventFailed) {
-            return event.error;
-        }
         if (voice->cancelledUs) {
             printf("DSPET_VOICE_DRAIN turn=%" PRIu32 " cancel_to_drain_us=%" PRId64 "\n",
                    played,
                    event.occurredUs - voice->cancelledUs);
             voice->cancelledUs = 0;
+        }
+        if (event.kind == kDSPetPlaybackEventFailed) {
+#ifdef CONFIG_DSPET_DIRECT_TEST
+            if (voice->direct) {
+                DSPetDirectVoiceCancel(voice->direct, played);
+                directFailed(voice, played, event.error);
+                continue;
+            }
+#endif
+            return event.error;
         }
         if (event.kind == kDSPetPlaybackEventFinished &&
             DSPetVoiceSessionApply(&voice->session, kDSPetVoiceReplyEnd, played)) {
@@ -124,7 +164,72 @@ static esp_err_t takePlaybackEvents(LocalVoice *voice) {
     return ESP_OK;
 }
 
+static void markReplyReady(LocalVoice *voice, uint32_t turn) {
+    voice->playbackTurnId = turn;
+    voice->armedUs        = INT64_MAX;
+    DSPetNearSpeechReset(voice->speech, false);
+    DSPetVoiceSessionApply(&voice->session, kDSPetVoiceReplyReady, turn);
+    publish(voice, "reply_ready");
+}
+
+#ifdef CONFIG_DSPET_DIRECT_TEST
+static esp_err_t advanceDirect(LocalVoice *voice) {
+    const uint32_t turn = voice->session.turnId;
+    if (voice->submittedTurnId != turn) {
+        // 上一条请求可能还在关闭 HTTPS，此时保留已结束的第二句，稍后提交。
+        if (!DSPetDirectVoiceGetStatus(voice->direct).complete) {
+            return ESP_OK;
+        }
+        size_t         samples = 0;
+        size_t         preRoll;
+        const int16_t *recording;
+        if (voice->fixture) {
+            recording = kReplyPcmStart;
+            samples   = kDSPetNearSpeechMaxRecordingSamples;
+        } else {
+            recording = DSPetNearSpeechRecording(voice->speech, &samples, &preRoll);
+        }
+        esp_err_t error = DSPetDirectVoiceSubmit(voice->direct, turn, recording, samples, voice->newSession);
+        if (error != ESP_OK) {
+            return error;
+        }
+        voice->submittedTurnId = turn;
+        voice->newSession      = false;
+        voice->fixture         = false;
+        publish(voice, "direct_submitted");
+    }
+
+    const DSPetDirectVoiceStatus status = DSPetDirectVoiceGetStatus(voice->direct);
+    if (status.complete && status.result != ESP_OK) {
+        directFailed(voice, turn, status.result);
+    } else if (status.ready) {
+        const esp_err_t error = DSPetPlaybackStartStream(DSPetDirectVoiceRead, voice->direct);
+        if (error != ESP_OK) {
+            return error;
+        }
+        printf("DSPET_DIRECT_STREAM turn=%" PRIu32 " before_end=%u\n", turn, status.complete ? 0u : 1u);
+        markReplyReady(voice, turn);
+    }
+    return ESP_OK;
+}
+
+static void startFixture(LocalVoice *voice) {
+    if (voice->direct && voice->session.state == kDSPetVoiceIdle) {
+        startSession(voice, "fixture_start");
+        DSPetVoiceSessionApply(&voice->session, kDSPetVoiceSpeechStart, 0);
+        DSPetVoiceSessionApply(&voice->session, kDSPetVoiceSpeechEnd, 0);
+        voice->fixture = true;
+        publish(voice, "fixture_end");
+    }
+}
+#endif
+
 static esp_err_t advanceSession(LocalVoice *voice, int64_t nowUs) {
+#ifdef CONFIG_DSPET_DIRECT_TEST
+    if (voice->direct && voice->session.state == kDSPetVoiceWaiting) {
+        return voice->playbackTurnId ? ESP_OK : advanceDirect(voice);
+    }
+#endif
     if (voice->session.state == kDSPetVoiceWaiting && !voice->playbackTurnId && nowUs >= voice->deadlineUs) {
         // 本地回复使用固定中文；就绪和完成事件都携带发起播放时的回合编号。
         const uint32_t turn  = voice->session.turnId;
@@ -132,11 +237,7 @@ static esp_err_t advanceSession(LocalVoice *voice, int64_t nowUs) {
         if (error != ESP_OK) {
             return error;
         }
-        voice->playbackTurnId = turn;
-        voice->armedUs        = INT64_MAX;
-        DSPetNearSpeechReset(voice->speech, false);
-        DSPetVoiceSessionApply(&voice->session, kDSPetVoiceReplyReady, turn);
-        publish(voice, "reply_ready");
+        markReplyReady(voice, turn);
     } else if (voice->session.state == kDSPetVoiceListening && nowUs >= voice->deadlineUs &&
                DSPetVoiceSessionApply(&voice->session, kDSPetVoiceListenTimeout, 0)) {
         DSPetWakeWordReset(voice->wakeWord);
@@ -168,6 +269,11 @@ static esp_err_t processBlock(LocalVoice *voice, const DSPetAudioTapBlock *block
 }
 
 static esp_err_t runSession(LocalVoice *voice) {
+#ifdef CONFIG_DSPET_DIRECT_TEST
+    if (atomic_exchange(&sFixtureRequested, false)) {
+        startFixture(voice);
+    }
+#endif
     if (atomic_exchange(&sStartRequested, false)) {
         startSession(voice, "manual_start");
     }
@@ -184,7 +290,17 @@ static esp_err_t runSession(LocalVoice *voice) {
 
 static void runVoice(LocalVoice *voice) {
     // 模型初始化比 DMA 队列的时间窗长，准备工作都在打开采样前完成。
-    esp_err_t error = DSPetWakeWordCreate(&voice->wakeWord);
+    esp_err_t error = ESP_OK;
+#ifdef CONFIG_DSPET_DIRECT_TEST
+    if (atomic_load(&sUseDirect)) {
+        error = DSPetDirectVoiceCreate(&sDirectSettings, &voice->direct);
+        mbedtls_platform_zeroize(&sDirectSettings, sizeof(sDirectSettings));
+    }
+    voice->submittedTurnId = 0;
+#endif
+    if (error == ESP_OK) {
+        error = DSPetWakeWordCreate(&voice->wakeWord);
+    }
     if (error == ESP_OK) {
         error = DSPetNearSpeechCreate(&voice->speech);
     }
@@ -197,6 +313,11 @@ static void runVoice(LocalVoice *voice) {
     }
     if (error == ESP_OK) {
         atomic_store(&sMode, kDSPetLocalVoiceOn);
+#ifdef CONFIG_DSPET_DIRECT_TEST
+        if (voice->direct) {
+            puts("DSPET_DIRECT_VOICE ready=1");
+        }
+#endif
         publish(voice, "ready");
         while (atomic_load(&sMode) == kDSPetLocalVoiceOn && error == ESP_OK) {
             error = runSession(voice);
@@ -225,6 +346,12 @@ static void runVoice(LocalVoice *voice) {
     if (error != ESP_OK) {
         ESP_LOGE(kTag, "Voice session stopped: %s", esp_err_to_name(error));
     }
+#ifdef CONFIG_DSPET_DIRECT_TEST
+    DSPetDirectVoiceDestroy(voice->direct);
+    voice->direct = NULL;
+    atomic_store(&sUseDirect, false);
+    atomic_store(&sFixtureRequested, false);
+#endif
     atomic_store(&sMode, kDSPetLocalVoiceOff);
     publish(voice, "disabled");
 }
@@ -278,3 +405,27 @@ esp_err_t DSPetLocalVoiceStart(void) {
 DSPetLocalVoiceMode DSPetLocalVoiceGetMode(void) { return atomic_load(&sMode); }
 
 DSPetVoiceState DSPetLocalVoiceGetState(void) { return atomic_load(&sState); }
+
+#ifdef CONFIG_DSPET_DIRECT_TEST
+esp_err_t DSPetLocalVoiceEnableDirect(const DSPetDirectSettings *settings) {
+    int expected = kDSPetLocalVoiceOff;
+    if (!sTask || !atomic_compare_exchange_strong(&sMode, &expected, kDSPetLocalVoiceStarting)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    sDirectSettings = *settings;
+    atomic_store(&sUseDirect, true);
+    xTaskNotifyGive(sTask);
+    return ESP_OK;
+}
+
+bool DSPetLocalVoiceDirectActive(void) { return atomic_load(&sUseDirect); }
+
+esp_err_t DSPetLocalVoiceStartFixture(void) {
+    if (!DSPetLocalVoiceDirectActive() || DSPetLocalVoiceGetMode() != kDSPetLocalVoiceOn ||
+        DSPetLocalVoiceGetState() != kDSPetVoiceIdle) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    atomic_store(&sFixtureRequested, true);
+    return ESP_OK;
+}
+#endif
