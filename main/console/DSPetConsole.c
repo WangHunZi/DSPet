@@ -27,9 +27,13 @@ static void printVoiceStatus(void) {
         [kDSPetLocalVoiceOn]       = "on",
         [kDSPetLocalVoiceStopping] = "stopping",
     };
-    printf("DSPET_VOICE_STATUS mode=%s state=%s\n",
+    printf("DSPET_VOICE_STATUS mode=%s state=%s",
            modes[DSPetLocalVoiceGetMode()],
            DSPetLocalVoiceStateName(DSPetLocalVoiceGetState()));
+#ifdef CONFIG_DSPET_DIRECT_TEST
+    printf(" always=%u", DSPetLocalVoiceAlwaysListeningRequested() ? 1u : 0u);
+#endif
+    putchar('\n');
 }
 
 #ifdef CONFIG_DSPET_DIRECT_TEST
@@ -52,6 +56,16 @@ static int startDirectVoice(const char *ssid, const char *timeArg) {
     }
     mbedtls_platform_zeroize(&settings, sizeof(settings));
     printf("DSPET_VOICE_COMMAND action=direct result=%s\n", esp_err_to_name(error));
+    return error == ESP_OK ? 0 : 1;
+}
+
+static int setAlwaysListening(const char *value) {
+    if (strcmp(value, "on") != 0 && strcmp(value, "off") != 0) {
+        puts("DSPET_ERROR use_voice_always_on_or_off");
+        return 1;
+    }
+    const esp_err_t error = DSPetLocalVoiceSetAlwaysListening(strcmp(value, "on") == 0);
+    printf("DSPET_VOICE_COMMAND action=always value=%s result=%s\n", value, esp_err_to_name(error));
     return error == ESP_OK ? 0 : 1;
 }
 #endif
@@ -93,6 +107,7 @@ static void printHelp(void) {
 #ifdef CONFIG_DSPET_DIRECT_TEST
     puts("dspet voice direct <SSID> <unix-time>");
     puts("dspet voice fixture");
+    puts("dspet voice always <on|off>");
 #endif
 #endif
 #ifdef CONFIG_DSPET_CONSOLE_TESTS
@@ -115,6 +130,9 @@ static int handleCommand(int argc, char **argv) {
         return handleVoice(argv[2]);
     }
 #ifdef CONFIG_DSPET_DIRECT_TEST
+    if (argc == 4 && strcmp(argv[1], "voice") == 0 && strcmp(argv[2], "always") == 0) {
+        return setAlwaysListening(argv[3]);
+    }
     if (argc == 5 && strcmp(argv[1], "voice") == 0 && strcmp(argv[2], "direct") == 0) {
         return startDirectVoice(argv[3], argv[4]);
     }

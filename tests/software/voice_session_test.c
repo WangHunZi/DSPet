@@ -2,7 +2,29 @@
 
 #include "DSPetVoiceSession.h"
 
+static void testAlwaysListening(void) {
+    DSPetVoiceSession session = {.alwaysListening = true};
+    assert(DSPetVoiceSessionApply(&session, kDSPetVoiceStart, 0));
+    assert(!DSPetVoiceSessionApply(&session, kDSPetVoiceListenTimeout, 0));
+    assert(DSPetVoiceSessionApply(&session, kDSPetVoiceSpeechStart, 0));
+    assert(DSPetVoiceSessionApply(&session, kDSPetVoiceSpeechEnd, 0));
+    const uint32_t ignored = session.turnId;
+    assert(!DSPetVoiceSessionApply(&session, kDSPetVoiceReplyIgnored, ignored - 1));
+    assert(DSPetVoiceSessionApply(&session, kDSPetVoiceReplyIgnored, ignored));
+    assert(!DSPetVoiceSessionApply(&session, kDSPetVoiceReplyReady, ignored));
+    assert(!DSPetVoiceSessionApply(&session, kDSPetVoiceListenTimeout, 0));
+    assert(DSPetVoiceSessionApply(&session, kDSPetVoiceSpeechStart, 0));
+    assert(DSPetVoiceSessionApply(&session, kDSPetVoiceSpeechEnd, 0));
+    assert(DSPetVoiceSessionApply(&session, kDSPetVoiceReplyReady, session.turnId));
+    assert(!DSPetVoiceSessionApply(&session, kDSPetVoiceReplyIgnored, session.turnId));
+    assert(DSPetVoiceSessionApply(&session, kDSPetVoiceReplyEnd, session.turnId));
+    assert(!DSPetVoiceSessionApply(&session, kDSPetVoiceListenTimeout, 0));
+    assert(DSPetVoiceSessionApply(&session, kDSPetVoiceStop, 0));
+    assert(session.state == kDSPetVoiceIdle);
+}
+
 int main(void) {
+    testAlwaysListening();
     DSPetVoiceSession session = {0};
     assert(DSPetVoiceSessionApply(&session, kDSPetVoiceStart, 0));
     assert(session.state == kDSPetVoiceListening);

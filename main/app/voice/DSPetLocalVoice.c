@@ -53,6 +53,7 @@ static atomic_bool       sStartRequested;
 #ifdef CONFIG_DSPET_DIRECT_TEST
 static atomic_bool         sUseDirect;
 static atomic_bool         sFixtureRequested;
+static atomic_bool         sAlwaysRequested;
 static DSPetDirectSettings sDirectSettings;
 #endif
 
@@ -134,6 +135,9 @@ static esp_err_t takePlaybackEvents(LocalVoice *voice) {
     DSPetPlaybackEvent event;
     while (DSPetPlaybackTakeEvent(&event)) {
         if (event.kind == kDSPetPlaybackEventQueued) {
+            if (voice->session.state != kDSPetVoiceSpeaking || voice->session.turnId != voice->playbackTurnId) {
+                continue;
+            }
             int64_t warmupUs = kBargeWarmupUs;
 #ifdef CONFIG_DSPET_DIRECT_TEST
             if (voice->direct) {
@@ -196,7 +200,8 @@ static esp_err_t advanceDirect(LocalVoice *voice) {
         } else {
             recording = DSPetNearSpeechRecording(voice->speech, &samples, &preRoll);
         }
-        esp_err_t error = DSPetDirectVoiceSubmit(voice->direct, turn, recording, samples, voice->newSession, false);
+        esp_err_t error = DSPetDirectVoiceSubmit(
+            voice->direct, turn, recording, samples, voice->newSession, voice->session.alwaysListening);
         if (error != ESP_OK) {
             return error;
         }
@@ -207,7 +212,11 @@ static esp_err_t advanceDirect(LocalVoice *voice) {
     }
 
     const DSPetDirectVoiceStatus status = DSPetDirectVoiceGetStatus(voice->direct);
-    if (status.complete && status.result != ESP_OK) {
+    if (status.complete && status.result == ESP_ERR_NOT_FOUND && voice->session.alwaysListening) {
+        DSPetVoiceSessionApply(&voice->session, kDSPetVoiceReplyIgnored, turn);
+        beginListening(voice, esp_timer_get_time(), 0, false);
+        publish(voice, "direct_ignored");
+    } else if (status.complete && status.result != ESP_OK) {
         directFailed(voice, turn, status.result);
     } else if (status.ready) {
         const esp_err_t error = DSPetPlaybackStartStream(DSPetDirectVoiceRead, voice->direct);
@@ -220,18 +229,39 @@ static esp_err_t advanceDirect(LocalVoice *voice) {
     return ESP_OK;
 }
 
+static void syncListeningMode(LocalVoice *voice) {
+    const bool enabled = atomic_load(&sAlwaysRequested);
+    if (enabled == voice->session.alwaysListening) {
+        return;
+    }
+    if (enabled) {
+        if (!voice->playbackTurnId && voice->session.state == kDSPetVoiceIdle) {
+            voice->session.alwaysListening = true;
+            startSession(voice, "always_start");
+        }
+        return;
+    }
+    voice->session.alwaysListening = false;
+    DSPetDirectVoiceCancel(voice->direct, voice->submittedTurnId);
+    if (voice->playbackTurnId) {
+        DSPetPlaybackCancel();
+    }
+    DSPetWakeWordReset(voice->wakeWord);
+    DSPetVoiceSessionApply(&voice->session, kDSPetVoiceStop, 0);
+    publish(voice, "always_stop");
+}
+
 static void startFixture(LocalVoice *voice) {
     if (!voice->direct) {
         return;
     }
     if (voice->session.state == kDSPetVoiceIdle) {
         startSession(voice, "fixture_start");
-        DSPetVoiceSessionApply(&voice->session, kDSPetVoiceSpeechStart, 0);
-    } else if (voice->session.state == kDSPetVoiceSpeaking) {
-        handleSpeech(voice, kDSPetSpeechStarted, esp_timer_get_time());
-    } else {
+    }
+    if (voice->session.recording) {
         return;
     }
+    handleSpeech(voice, kDSPetSpeechStarted, esp_timer_get_time());
     if (DSPetVoiceSessionApply(&voice->session, kDSPetVoiceSpeechEnd, 0)) {
         voice->fixture = true;
         publish(voice, "fixture_end");
@@ -253,10 +283,17 @@ static esp_err_t advanceSession(LocalVoice *voice, int64_t nowUs) {
             return error;
         }
         markReplyReady(voice, turn);
-    } else if (voice->session.state == kDSPetVoiceListening && nowUs >= voice->deadlineUs &&
-               DSPetVoiceSessionApply(&voice->session, kDSPetVoiceListenTimeout, 0)) {
-        DSPetWakeWordReset(voice->wakeWord);
-        publish(voice, "listen_timeout");
+    } else if (voice->session.state == kDSPetVoiceListening && !voice->session.recording &&
+               nowUs >= voice->deadlineUs) {
+#ifdef CONFIG_DSPET_DIRECT_TEST
+        if (voice->session.alwaysListening) {
+            voice->newSession = true;
+        }
+#endif
+        if (DSPetVoiceSessionApply(&voice->session, kDSPetVoiceListenTimeout, 0)) {
+            DSPetWakeWordReset(voice->wakeWord);
+            publish(voice, "listen_timeout");
+        }
     }
     return ESP_OK;
 }
@@ -302,12 +339,18 @@ static esp_err_t processBlock(LocalVoice *voice, const DSPetAudioTapBlock *block
 
 static esp_err_t runSession(LocalVoice *voice) {
 #ifdef CONFIG_DSPET_DIRECT_TEST
+    syncListeningMode(voice);
     if (atomic_exchange(&sFixtureRequested, false)) {
         startFixture(voice);
     }
 #endif
     if (atomic_exchange(&sStartRequested, false)) {
-        startSession(voice, "manual_start");
+#ifdef CONFIG_DSPET_DIRECT_TEST
+        if (!atomic_load(&sAlwaysRequested))
+#endif
+        {
+            startSession(voice, "manual_start");
+        }
     }
     esp_err_t error = takePlaybackEvents(voice);
     if (error == ESP_OK) {
@@ -383,6 +426,8 @@ static void runVoice(LocalVoice *voice) {
     voice->direct = NULL;
     atomic_store(&sUseDirect, false);
     atomic_store(&sFixtureRequested, false);
+    atomic_store(&sAlwaysRequested, false);
+    voice->session.alwaysListening = false;
 #endif
     atomic_store(&sMode, kDSPetLocalVoiceOff);
     publish(voice, "disabled");
@@ -452,10 +497,22 @@ esp_err_t DSPetLocalVoiceEnableDirect(const DSPetDirectSettings *settings) {
 
 bool DSPetLocalVoiceDirectActive(void) { return atomic_load(&sUseDirect); }
 
+esp_err_t DSPetLocalVoiceSetAlwaysListening(bool enabled) {
+    if (!DSPetLocalVoiceDirectActive() || DSPetLocalVoiceGetMode() != kDSPetLocalVoiceOn ||
+        (enabled && !atomic_load(&sAlwaysRequested) && DSPetLocalVoiceGetState() != kDSPetVoiceIdle)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    atomic_store(&sAlwaysRequested, enabled);
+    return ESP_OK;
+}
+
+bool DSPetLocalVoiceAlwaysListeningRequested(void) { return atomic_load(&sAlwaysRequested); }
+
 esp_err_t DSPetLocalVoiceStartFixture(void) {
     const DSPetVoiceState state = DSPetLocalVoiceGetState();
     if (!DSPetLocalVoiceDirectActive() || DSPetLocalVoiceGetMode() != kDSPetLocalVoiceOn ||
-        (state != kDSPetVoiceIdle && state != kDSPetVoiceSpeaking)) {
+        (state != kDSPetVoiceIdle && state != kDSPetVoiceSpeaking &&
+         !(state == kDSPetVoiceListening && DSPetLocalVoiceAlwaysListeningRequested()))) {
         return ESP_ERR_INVALID_STATE;
     }
     atomic_store(&sFixtureRequested, true);

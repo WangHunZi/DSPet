@@ -67,8 +67,20 @@ esp_err_t DSPetLocalVoiceEnableDirect(const DSPetDirectSettings *settings);
 bool DSPetLocalVoiceDirectActive(void);
 
 /**
- * @brief 在直连待机或播报时用本地 PCM 验证真实网络回合或受控插话。
- * @return ESP_OK 表示已提交；离线、聆听、等待或未就绪时返回状态错误。
+ * @brief 请求切换免唤醒。关闭时取消当前回合并回到唤醒待机。
+ * @param[in] enabled true 开启，false 关闭。
+ * @return ESP_OK 表示已提交；直连未就绪或试图在忙碌时开启，返回 ESP_ERR_INVALID_STATE。
+ * @note 仅在当前直连会话有效，语音任务异步应用。
+ */
+esp_err_t DSPetLocalVoiceSetAlwaysListening(bool enabled);
+
+/** @brief 已请求开启免唤醒时返回 true。 */
+bool DSPetLocalVoiceAlwaysListeningRequested(void);
+
+/**
+ * @brief 用本地 PCM 验证直连待机、免唤醒聆听或播报插话。
+ * @return ESP_OK 表示已提交；离线、等待或未就绪时返回状态错误。
+ * @note 免唤醒期间已有录音时，语音任务丢弃此请求。
  */
 esp_err_t DSPetLocalVoiceStartFixture(void);
 #endif

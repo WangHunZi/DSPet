@@ -46,6 +46,12 @@ bool DSPetVoiceSessionApply(DSPetVoiceSession *session, DSPetVoiceEvent event, u
                 return true;
             }
             break;
+        case kDSPetVoiceReplyIgnored:
+            if (session->state == kDSPetVoiceWaiting && replyTurnId == session->turnId) {
+                listen(session, false);
+                return true;
+            }
+            break;
         case kDSPetVoiceReplyFailed:
             if ((session->state == kDSPetVoiceWaiting || session->state == kDSPetVoiceSpeaking) &&
                 replyTurnId == session->turnId) {
@@ -54,7 +60,7 @@ bool DSPetVoiceSessionApply(DSPetVoiceSession *session, DSPetVoiceEvent event, u
             }
             break;
         case kDSPetVoiceListenTimeout:
-            if (session->state != kDSPetVoiceListening || session->recording) {
+            if (session->state != kDSPetVoiceListening || session->recording || session->alwaysListening) {
                 break;
             }
             // 未开口超时和手动停止都回到待机。

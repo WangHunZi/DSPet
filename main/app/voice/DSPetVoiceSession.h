@@ -19,6 +19,7 @@ typedef enum {
     kDSPetVoiceSpeechEnd,     /**< 本句录音完成。 */
     kDSPetVoiceReplyReady,    /**< 一轮回复可播放。 */
     kDSPetVoiceReplyEnd,      /**< 一轮回复已播完。 */
+    kDSPetVoiceReplyIgnored,  /**< 等待的回合无须播报。 */
     kDSPetVoiceReplyFailed,   /**< 一轮请求或播报失败，回到聆听。 */
     kDSPetVoiceListenTimeout, /**< 聆听超时且未开口。 */
     kDSPetVoiceStop,          /**< 停止会话或处理出错。 */
@@ -26,9 +27,10 @@ typedef enum {
 
 /** @brief 由会话控制任务维护的纯状态，初始可置零。 */
 typedef struct {
-    DSPetVoiceState state;     /**< 当前状态。 */
-    uint32_t        turnId;    /**< 回合编号，结束会话后保留用于生成下一个编号。 */
-    bool            recording; /**< 聆听阶段已确认开口。 */
+    DSPetVoiceState state;           /**< 当前状态。 */
+    uint32_t        turnId;          /**< 回合编号，结束会话后保留用于生成下一个编号。 */
+    bool            alwaysListening; /**< 开启时不因安静退回唤醒待机。 */
+    bool            recording;       /**< 聆听阶段已确认开口。 */
 } DSPetVoiceSession;
 
 /**
