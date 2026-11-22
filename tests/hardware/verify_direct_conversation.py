@@ -42,7 +42,9 @@ def verify_fixture(board):
         raise RuntimeError("板载会话在取得 ASR 结果前失败。")
     board.expect(fr"DSPET_DIRECT_STREAM turn={turn} before_end=1", 45)
     board.expect(fr"DSPET_VOICE event=playback_started state=speaking turn={turn}\b", 8)
-    board.expect(fr"DSPET_DIRECT_END turn={turn} result=ESP_OK cancelled=0 samples=\d+", 55)
+    ended = board.expect(fr"DSPET_DIRECT_END turn={turn} result=\w+ cancelled=\d+ samples=\d+", 65)
+    if "result=ESP_OK cancelled=0" not in ended.group():
+        raise RuntimeError("自动用例播放未完整结束。")
     board.expect(r"DSPET_VOICE event=playback_finished state=listening turn=\d+", 40)
     board.expect(r"DSPET_VOICE event=listen_timeout state=idle turn=\d+", 12)
     print("DSPET_HOST_TEST direct_fixture=pass", flush=True)

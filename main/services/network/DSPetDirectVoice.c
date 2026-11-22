@@ -20,11 +20,12 @@
 
 enum {
     kBufferBytes        = 64 * 1024,
-    kPrebufferBytes     = 16 * 1024,
+    kPrebufferBytes     = 32 * 1024,
+    kResumeBytes        = 16 * 1024,
     kReadWaitMs         = 8,
     kWriteWaitMs        = 20,
     kDecodeBytes        = 256,
-    kSpeakerAttenuation = 10,
+    kSpeakerAttenuation = 20,
     kTranscriptBytes    = 512,
     kReplyBytes         = 2048,
 };
@@ -55,7 +56,8 @@ struct DSPetDirectVoice {
     size_t               samples;
     DSPetPcm24kTo16k     converter;
     size_t               produced;
-    atomic_uint          waits;
+    atomic_uint          gaps;
+    bool                 refilling;
     bool                 wifiOpen;
 };
 
@@ -163,7 +165,7 @@ static void workerTask(void *context) {
                esp_err_to_name(voice->result),
                cancelRequested(voice) ? 1u : 0u,
                voice->produced,
-               atomic_load(&voice->waits));
+               atomic_load(&voice->gaps));
         atomic_store(&voice->complete, true);
     }
     xSemaphoreGive(voice->exited);
@@ -180,7 +182,7 @@ esp_err_t DSPetDirectVoiceCreate(const DSPetDirectSettings *settings, DSPetDirec
     atomic_init(&voice->complete, true);
     atomic_init(&voice->cancelled, false);
     atomic_init(&voice->stopping, false);
-    atomic_init(&voice->waits, 0);
+    atomic_init(&voice->gaps, 0);
     voice->buffers  = heap_caps_calloc(1, sizeof(*voice->buffers), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     voice->exited   = xSemaphoreCreateBinary();
     esp_err_t error = voice->buffers && voice->exited ? DSPetWifiOpen() : ESP_ERR_NO_MEM;
@@ -231,7 +233,8 @@ esp_err_t DSPetDirectVoiceSubmit(
     voice->converter = (DSPetPcm24kTo16k) {0};
     voice->produced  = 0;
     memcpy(voice->buffers->recording, samples, sampleCount * sizeof(*samples));
-    atomic_store(&voice->waits, 0);
+    atomic_store(&voice->gaps, 0);
+    voice->refilling = false;
     atomic_store(&voice->cancelled, false);
     atomic_store(&voice->complete, false);
     xTaskNotifyGive(voice->worker);
@@ -260,13 +263,19 @@ esp_err_t DSPetDirectVoiceRead(void *context, int16_t *samples, size_t capacityS
     if (complete && voice->result != ESP_OK) {
         return voice->result;
     }
-    size_t bytes = xStreamBufferReceive(
+    if (voice->refilling && !complete && xStreamBufferBytesAvailable(voice->audio) < kResumeBytes) {
+        vTaskDelay(pdMS_TO_TICKS(kReadWaitMs));
+        return ESP_ERR_TIMEOUT;
+    }
+    voice->refilling = false;
+    size_t bytes     = xStreamBufferReceive(
         voice->audio, samples, capacitySamples * sizeof(*samples), complete ? 0 : pdMS_TO_TICKS(kReadWaitMs));
     *sampleCount = bytes / sizeof(*samples);
     if (bytes || complete) {
         return ESP_OK;
     }
-    atomic_fetch_add(&voice->waits, 1);
+    voice->refilling = true;
+    atomic_fetch_add(&voice->gaps, 1);
     return ESP_ERR_TIMEOUT;
 }
 

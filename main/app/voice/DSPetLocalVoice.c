@@ -17,12 +17,13 @@
 #endif
 
 enum {
-    kTapWaitMs       = 20,
-    kListenTimeoutUs = 8000000,
-    kWakeTailUs      = 220000,
-    kReplyTailUs     = 220000,
-    kBargeWarmupUs   = 850000,
-    kReplyDelayUs    = 250000,
+    kTapWaitMs           = 20,
+    kListenTimeoutUs     = 8000000,
+    kWakeTailUs          = 220000,
+    kReplyTailUs         = 220000,
+    kBargeWarmupUs       = 850000,
+    kDirectBargeWarmupUs = 1250000,
+    kReplyDelayUs        = 250000,
 };
 
 typedef struct {
@@ -133,7 +134,13 @@ static esp_err_t takePlaybackEvents(LocalVoice *voice) {
     DSPetPlaybackEvent event;
     while (DSPetPlaybackTakeEvent(&event)) {
         if (event.kind == kDSPetPlaybackEventQueued) {
-            voice->armedUs = event.occurredUs + kBargeWarmupUs;
+            int64_t warmupUs = kBargeWarmupUs;
+#ifdef CONFIG_DSPET_DIRECT_TEST
+            if (voice->direct) {
+                warmupUs = kDirectBargeWarmupUs;
+            }
+#endif
+            voice->armedUs = event.occurredUs + warmupUs;
             publish(voice, "playback_started");
             continue;
         }
