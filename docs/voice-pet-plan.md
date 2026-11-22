@@ -120,6 +120,8 @@ flowchart TB
 
 M1a 是下一笔固件工作的范围。它验证音频硬件与播放服务之间的接口，先把采样格式、块大小、时间依据和缓冲区有效期写进头文件。M2 可独立推进。M4 的假数据页面可在导航边界确认后独立推进，整体验收依赖 M3。每个实现阶段按职责拆提交，附构建或测试结果，区分串口证据和实物听感。提交说明用中文，沿用仓库已有的 `type(scope):` 格式。见 [Git 提交约定](coding-style.md#git-提交)。
 
+**M1a 的 ESP-SR 构建检查。** ESP-IDF 6.0.2 和 ESP-SR 2.6.1 用独立的 ESP32-S3 工程编译及链接 `MR` 音频前端通过。测试配置选 `CONFIG_SR_WN_WN9S_NIHAOXIAOZHI=y` 和 `CONFIG_SR_VADN_VADNET1_MEDIUM=y`，打包得到 414,016 字节模型镜像。现有 16 MiB Flash 在 15 MiB 应用分区之后还有 960 KiB，可容纳这组模型。下一阶段用 DSPet 合并构建复核实际代码体积与运行内存。这个检查使用独立工程，板上双路诊断采用现有 DSPet 分区。参考 [小智音频模块](https://github.com/78/xiaozhi-esp32/blob/main/main/audio/README.md) 和 [ESP-SR 2.6.1](https://components.espressif.com/components/espressif/esp-sr/versions/2.6.1/readme)。
+
 ## 讨论后再定稿
 
 - **部署**：首版能否依赖同一 Wi-Fi 下的 Mac？开发建议本地网关。如果要求接电联网就能用，同一服务可部署到常在线服务器；如果要求纯设备直连，则重新评估密钥、TLS 内存、上下文和音频格式处理。
