@@ -157,12 +157,16 @@ bash scripts/idf.sh -B .cache/build-serial-tests \
 dspet help
 dspet info
 dspet test hardware audio duplex
+dspet test hardware audio alignment
 dspet test status
 dspet test human audio loopback
 dspet test confirm 2 pass
 ```
 
 双路用例播放固定语音、取消并重播到自然结束。固件检查 PSRAM、RX/TX 连续性和 TX 静音。
+延迟用例播放三段 128 ms 短扫频。把设备保持在日常摆放位置，测试期间保持安静。
+每轮输出 `delay_us` 和 `correlation_milli`，分别表示 TX 参考到麦克风的估计延迟和相关系数乘以 1,000。
+`alignment_spread_us` 表示三轮最大值和最小值的差。估计包含换能器、声学路径和 DMA 时间基准的偏差。
 回放用例提示你在提示音后说话，回放后进入 `waiting_human`，能听清输入 `pass`，否则输入 `fail`。
 同一时间接受一个用例。`DSPET_TEST` 行带运行编号和状态，`DSPET_TEST_METRIC` 行报告双路测量值。
 运行编号和状态保存在 RAM，重启后重新计数。如需留存整轮证据，可用电脑保存串口输出。

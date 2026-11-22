@@ -151,6 +151,8 @@ M1a 的双路诊断已上板，下一阶段 M1b 处理实际声学路径的对�
 
 **M1a 的 ESP-SR 构建检查。** ESP-IDF 6.0.2 和 ESP-SR 2.6.1 用独立的 ESP32-S3 工程编译及链接 `MR` 音频前端通过。测试配置选 `CONFIG_SR_WN_WN9S_NIHAOXIAOZHI=y` 和 `CONFIG_SR_VADN_VADNET1_MEDIUM=y`，打包得到 414,016 字节模型镜像。现有 16 MiB Flash 在 15 MiB 应用分区之后还有 960 KiB，可容纳这组模型。下一阶段用 DSPet 合并构建复核实际代码体积与运行内存。这个检查使用独立工程，板上双路诊断采用现有 DSPet 分区。参考 [小智音频模块](https://github.com/78/xiaozhi-esp32/blob/main/main/audio/README.md) 和 [ESP-SR 2.6.1](https://components.espressif.com/components/espressif/esp-sr/versions/2.6.1/readme)。
 
+**M1b 延迟测量基线。** 2026-11-22 使用 XIAO ESP32S3 Plus，固件 `c8dc97a`。通过串口执行 `dspet test hardware audio alignment`。每次播放三段 128 ms 短扫频，取实际 TX 采样作为参考，通过去直流的归一化互相关定位回录里的匹配点，再用两路 DMA 时间基准换算延迟。四次命令共测 12 轮，包含一次人工拔插 USB 后复测。延迟为 2,097～2,098 µs，相关系数为 0.645～0.781，四次均返回 `pass`。同一配置下，后续 AEC 可以从约 2.10 ms 开始校准。这个估计随硬件、音量和摆放变化，包含换能器及 DMA 时间基准影响，微秒输出保留计算结果，采样间隔为 62.5 µs。批量相关计算会暂时降低刷帧速度，作为诊断用例运行。自然插话和回声消除仍是接下来的 M1b 工作。
+
 ## 讨论后再定稿
 
 - **部署**：首版能否依赖同一 Wi-Fi 下的 Mac？开发建议本地网关。如果要求接电联网就能用，同一服务可部署到常在线服务器；如果要求纯设备直连，则重新评估密钥、TLS 内存、上下文和音频格式处理。
