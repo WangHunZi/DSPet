@@ -145,8 +145,8 @@ XIAO ESP32S3 Plus 的录音内存测试使用 Octal PSRAM，选择 `Add RAM to h
 
 ```sh
 bash tools/make_playback_demo.sh
-bash scripts/idf.sh -B .cache/build-serial-tests \
-  -D SDKCONFIG=.cache/sdkconfig.serial-check \
+bash scripts/idf.sh -B .cache/build-serial-aec \
+  -D SDKCONFIG=.cache/sdkconfig.serial-aec \
   -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;tests/sdkconfig.serial.defaults' \
   -p /dev/cu.usbmodem1101 flash monitor
 ```
@@ -158,6 +158,7 @@ dspet help
 dspet info
 dspet test hardware audio duplex
 dspet test hardware audio alignment
+dspet test hardware audio aec
 dspet test status
 dspet test human audio loopback
 dspet test confirm 2 pass
@@ -167,6 +168,11 @@ dspet test confirm 2 pass
 延迟用例播放三段 128 ms 短扫频。把设备保持在日常摆放位置，测试期间保持安静。
 每轮输出 `delay_us` 和 `correlation_milli`，分别表示 TX 参考到麦克风的估计延迟和相关系数乘以 1,000。
 `alignment_spread_us` 表示三轮最大值和最小值的差。估计包含换能器、声学路径和 DMA 时间基准的偏差。
+AEC 用例播放固定语音，请在测试期间保持安静。它先测底噪，跳过前两秒自适应，再比较同一段麦克风 PCM 在处理前后的 RMS。
+底噪输出整段 RMS 和帧 RMS 中位数，用后者判断回录里是否有足够可测的回声。
+`reduction_db` 记录抑制量，`max_process_us` 与 `frame_budget_us` 用于检查实时性。
+此用例要求回录有足够回声、抑制至少 6 dB、无丢块，且处理时间小于一帧时长。
+测试配置启用 ESP-SR 2.6.1 的双工低开销 AEC。若复用已有的测试 `sdkconfig`，在 `DSPet audio` 菜单启用 AEC 服务后再构建。
 回放用例提示你在提示音后说话，回放后进入 `waiting_human`，能听清输入 `pass`，否则输入 `fail`。
 同一时间接受一个用例。`DSPET_TEST` 行带运行编号和状态，`DSPET_TEST_METRIC` 行报告双路测量值。
 运行编号和状态保存在 RAM，重启后重新计数。如需留存整轮证据，可用电脑保存串口输出。
