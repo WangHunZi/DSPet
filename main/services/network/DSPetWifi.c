@@ -28,11 +28,14 @@ static void networkEvent(void *arg, esp_event_base_t base, int32_t id, void *dat
     if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         xEventGroupSetBits(events, kGotIp);
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        xEventGroupClearBits(events, kGotIp);
         const wifi_event_sta_disconnected_t *event = data;
         printf("DSPET_WIFI_DISCONNECT reason=%u\n", (unsigned) event->reason);
         xEventGroupSetBits(events, kDisconnected);
     }
 }
+
+bool DSPetWifiIsConnected(void) { return sEvents && (xEventGroupGetBits(sEvents) & kGotIp); }
 
 esp_err_t DSPetWifiOpen(void) {
     if (sSta) {

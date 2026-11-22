@@ -1,6 +1,8 @@
 #ifndef DSPET_WIFI_H
 #define DSPET_WIFI_H
 
+#include <stdbool.h>
+
 #include "esp_err.h"
 
 enum {
@@ -30,6 +32,9 @@ esp_err_t DSPetWifiScan(const char *prefix);
  * @note Wi-Fi 驱动使用 RAM 存储。调用期间借用凭据，关闭驱动时释放配置。
  */
 esp_err_t DSPetWifiConnect(const char *ssid, const char *password);
+
+/** @brief 查询当前 STA 是否仍持有可用的网络连接和 IP。 */
+bool DSPetWifiIsConnected(void);
 
 /**
  * @brief 断开并释放 STA、事件回调及驱动资源。
