@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "DSPetAudioDevice.h"
+#include "DSPetPcmReplay.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
@@ -15,11 +16,6 @@ enum {
     kTonePeak      = 768,
     kRecordSeconds = 3,
     kRecordSamples = kDSPetAudioDeviceSampleRateHz * kRecordSeconds,
-    kReplayPeak    = 2048,
-    kGainScale     = 256,
-    kTargetRms     = 512,
-    kMeterPeak     = 512,
-    kMaxGain       = 16,
 };
 
 static const char *const kTag = "audio_check";
@@ -64,55 +60,26 @@ static esp_err_t capture(int16_t *pcm, size_t sampleCount) {
     return result == ESP_OK ? stop : result;
 }
 
-static esp_err_t replayCapture(const int16_t *pcm, size_t samples) {
-    int64_t sum = 0;
-    for (size_t i = 0; i < samples; ++i) sum += pcm[i];
-    const int32_t dc          = (int32_t) (sum / (int64_t) samples);
-    int32_t       peak        = 0;
-    int64_t       energy      = 0;
-    int64_t       meterEnergy = 0;
-    for (size_t i = 0; i < samples; ++i) {
-        int32_t sample    = pcm[i] - dc;
-        int32_t magnitude = abs(sample);
-        if (magnitude > peak) {
-            peak = magnitude;
-        }
-        energy += (int64_t) sample * sample;
-        int32_t metered = magnitude < kMeterPeak ? magnitude : kMeterPeak;
-        meterEnergy += (int64_t) metered * metered;
-    }
+static esp_err_t replayCapture(int16_t *pcm, size_t samples) {
+    DSPetPcmReplayLevel level;
+    bool                hasSignal = DSPetPcmReplayNormalize(pcm, samples, &level);
     ESP_LOGI(kTag,
              "Mic captured %u samples, DC=%ld AC peak=%ld RMS=%.1f (PCM16)",
              (unsigned) samples,
-             (long) dc,
-             (long) peak,
-             sqrt((double) energy / samples));
-    if (peak == 0) {
+             (long) level.dc,
+             (long) level.peak,
+             level.rms);
+    if (!hasSignal) {
         ESP_LOGW(kTag, "No variation in left slot; check microphone power, SD and L/R");
         return ESP_ERR_INVALID_RESPONSE;
     }
-
-    // 峰值会受单个尖峰影响。先用截幅 RMS 估计响度，再给实际输出独立限幅。
-    double  meteredRms = sqrt((double) meterEnergy / samples);
-    double  ratio      = meteredRms >= (double) kTargetRms / kMaxGain ? kTargetRms / meteredRms : kMaxGain;
-    int32_t gain       = (int32_t) (ratio * kGainScale);
-    ESP_LOGI(kTag, "Replaying recording: gain=%.2fx metered_rms=%.1f peak_limit=%d", ratio, meteredRms, kReplayPeak);
-    int16_t chunk[kDSPetAudioDeviceBlockSamples];
+    ESP_LOGI(kTag, "Replaying recording: gain=%.2fx metered_rms=%.1f", level.gain, level.metered);
     for (size_t offset = 0; offset < samples;) {
         size_t count = samples - offset;
         if (count > kDSPetAudioDeviceBlockSamples) {
             count = kDSPetAudioDeviceBlockSamples;
         }
-        for (size_t i = 0; i < count; ++i) {
-            int32_t sample = (pcm[offset + i] - dc) * gain / kGainScale;
-            if (sample > kReplayPeak) {
-                sample = kReplayPeak;
-            } else if (sample < -kReplayPeak) {
-                sample = -kReplayPeak;
-            }
-            chunk[i] = (int16_t) sample;
-        }
-        ESP_RETURN_ON_ERROR(DSPetAudioDeviceWrite(chunk, count, kIoTimeoutMs), kTag, "play captured audio");
+        ESP_RETURN_ON_ERROR(DSPetAudioDeviceWrite(pcm + offset, count, kIoTimeoutMs), kTag, "play captured audio");
         offset += count;
     }
     return DSPetAudioDeviceDrain(kIoTimeoutMs);

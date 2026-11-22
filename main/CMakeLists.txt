@@ -54,7 +54,7 @@ idf_component_register(
          "hardware/DSPetBootPin.c" "hardware/DSPetPanel.c" "hardware/DSPetAudioDevice.c"
          "services/input/DSPetButton.c" "services/input/DSPetButtonFilter.c"
          "services/animation/DSPetAnimation.c" "services/animation/DSPetIndexedFrame.c"
-         "services/audio/DSPetPlayback.c" "ui/DSPetPetPage.c"
+         "services/audio/DSPetPlayback.c" "services/audio/DSPetPcmReplay.c" "ui/DSPetPetPage.c"
     PRIV_INCLUDE_DIRS "." "app" "hardware" "services/input" "services/animation" "services/audio" "ui" "diagnostics" "console"
                       "${CMAKE_CURRENT_BINARY_DIR}"
     REQUIRES console esp_app_format esp_lcd esp_driver_gpio esp_driver_spi esp_driver_i2s esp_timer esp_rom
