@@ -11,6 +11,13 @@ enum {
     kDSPetSpeechPreRollSamples = kDSPetSpeechFrameSamples * kDSPetSpeechPreRollFrames,
 };
 
+/** @brief 人声检测与能量门限组合后的帧证据。 */
+typedef enum {
+    kDSPetSpeechSilent, /**< 无有效人声证据。 */
+    kDSPetSpeechVoiced, /**< 满足续录所需的人声证据。 */
+    kDSPetSpeechStrong, /**< 达到开口需要的较高能量。 */
+} DSPetSpeechEvidence;
+
 /** @brief 一帧处理后对应用可见的变化。 */
 typedef enum {
     kDSPetSpeechNoEvent,  /**< 状态未变化。 */
@@ -29,6 +36,7 @@ typedef struct {
     size_t   filled;                              /**< 历史中有效的样本数。 */
     unsigned voicedFrames;                        /**< 连续命中人声的帧数。 */
     unsigned quietFrames;                         /**< 录音中连续未命中人声的帧数。 */
+    bool     strongInRun;                         /**< 当前连续人声内有较强证据。 */
     bool     active;                              /**< 已经开始录音。 */
     bool     done;                                /**< 已经结束本句。 */
 } DSPetSpeechCapture;
@@ -45,10 +53,11 @@ void DSPetSpeechCaptureInit(DSPetSpeechCapture *capture, int16_t *recording, siz
  * @brief 输入一帧 16 kHz、20 ms 的消回声 PCM。
  * @param[in,out] capture 已初始化状态。
  * @param[in] pcm kDSPetSpeechFrameSamples 个样本，仅在调用时借用。
- * @param[in] voiced 本帧是否有人声证据。
+ * @param[in] evidence 本帧的人声证据。
  * @param[in] armed 是否允许产生开口事件。关闭时仍保留短预录。
  * @return 应用可见的状态变化。
  */
-DSPetSpeechEvent DSPetSpeechCapturePush(DSPetSpeechCapture *capture, const int16_t *pcm, bool voiced, bool armed);
+DSPetSpeechEvent
+DSPetSpeechCapturePush(DSPetSpeechCapture *capture, const int16_t *pcm, DSPetSpeechEvidence evidence, bool armed);
 
 #endif

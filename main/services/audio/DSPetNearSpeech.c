@@ -65,12 +65,12 @@ static void classify(DSPetNearSpeech *speech, const int16_t *pcm, size_t samples
         pcm += count;
         samples -= count;
         if (speech->pendingSamples == kDSPetSpeechFrameSamples) {
-            float rms;
-            bool  voiced = DSPetSpeechDetectorProcess(speech->detector, speech->pending, &rms);
+            float               rms;
+            DSPetSpeechEvidence evidence = DSPetSpeechDetectorProcess(speech->detector, speech->pending, &rms);
             if (armed && rms > speech->peakRms) {
                 speech->peakRms = rms;
             }
-            DSPetSpeechEvent next = DSPetSpeechCapturePush(&speech->capture, speech->pending, voiced, armed);
+            DSPetSpeechEvent next = DSPetSpeechCapturePush(&speech->capture, speech->pending, evidence, armed);
             if (next != kDSPetSpeechNoEvent) {
                 *event = next;
             }

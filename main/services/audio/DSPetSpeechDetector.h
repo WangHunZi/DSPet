@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "DSPetSpeechCapture.h"
 #include "esp_err.h"
 
 /** @brief 一路 ESP-SR 人声判定。 */
@@ -21,9 +22,9 @@ esp_err_t DSPetSpeechDetectorCreate(DSPetSpeechDetector **detector);
  * @param[in,out] detector 同一任务持有的实例。
  * @param[in] pcm 320 个单声道 PCM16 样本，仅在调用时借用。
  * @param[out] rms 本帧限幅计量后的 PCM RMS。
- * @return 同时满足人声分类和能量门限时返回 true。
+ * @return 人声分类通过后的能量等级。
  */
-bool DSPetSpeechDetectorProcess(DSPetSpeechDetector *detector, const int16_t *pcm, float *rms);
+DSPetSpeechEvidence DSPetSpeechDetectorProcess(DSPetSpeechDetector *detector, const int16_t *pcm, float *rms);
 
 /**
  * @brief 释放人声检测实例。

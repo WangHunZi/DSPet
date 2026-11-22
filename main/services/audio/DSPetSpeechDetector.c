@@ -10,6 +10,7 @@ enum {
     kSampleRateHz = 16000,
     kFrameMs      = 20,
     kVadGain      = 8,
+    kOnsetRms     = 110,
     kEnergyRms    = 52,
     kMeterPeak    = 384,
 };
@@ -37,7 +38,7 @@ esp_err_t DSPetSpeechDetectorCreate(DSPetSpeechDetector **out) {
     return ESP_OK;
 }
 
-bool DSPetSpeechDetectorProcess(DSPetSpeechDetector *detector, const int16_t *pcm, float *rms) {
+DSPetSpeechEvidence DSPetSpeechDetectorProcess(DSPetSpeechDetector *detector, const int16_t *pcm, float *rms) {
     uint32_t squares = 0;
     for (size_t i = 0; i < kDSPetSpeechFrameSamples; ++i) {
         int32_t magnitude = abs(pcm[i]);
@@ -53,8 +54,11 @@ bool DSPetSpeechDetectorProcess(DSPetSpeechDetector *detector, const int16_t *pc
     }
     *rms = sqrtf((float) squares / kDSPetSpeechFrameSamples);
     // WebRTC 的保持状态仍持续更新，能量门限避免一个孤立敲击延长命中。
-    return vad_process(detector->vad, detector->amplified, kSampleRateHz, kFrameMs) == VAD_SPEECH &&
-           squares >= kEnergyRms * kEnergyRms * kDSPetSpeechFrameSamples;
+    if (vad_process(detector->vad, detector->amplified, kSampleRateHz, kFrameMs) != VAD_SPEECH ||
+        squares < kEnergyRms * kEnergyRms * kDSPetSpeechFrameSamples) {
+        return kDSPetSpeechSilent;
+    }
+    return squares >= kOnsetRms * kOnsetRms * kDSPetSpeechFrameSamples ? kDSPetSpeechStrong : kDSPetSpeechVoiced;
 }
 
 void DSPetSpeechDetectorDestroy(DSPetSpeechDetector *detector) {

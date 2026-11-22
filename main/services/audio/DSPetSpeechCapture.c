@@ -29,14 +29,22 @@ static void copyHistory(DSPetSpeechCapture *capture) {
     capture->recordedSamples = capture->filled;
 }
 
-DSPetSpeechEvent DSPetSpeechCapturePush(DSPetSpeechCapture *capture, const int16_t *pcm, bool voiced, bool armed) {
+DSPetSpeechEvent
+DSPetSpeechCapturePush(DSPetSpeechCapture *capture, const int16_t *pcm, DSPetSpeechEvidence evidence, bool armed) {
     if (capture->done) {
         return kDSPetSpeechNoEvent;
     }
+    bool voiced = evidence != kDSPetSpeechSilent;
     if (!capture->active) {
         saveHistory(capture, pcm);
-        capture->voicedFrames = armed && voiced ? capture->voicedFrames + 1 : 0;
-        if (capture->voicedFrames < kSpeechFrames) {
+        if (armed && voiced) {
+            ++capture->voicedFrames;
+            capture->strongInRun = capture->strongInRun || evidence == kDSPetSpeechStrong;
+        } else {
+            capture->voicedFrames = 0;
+            capture->strongInRun  = false;
+        }
+        if (capture->voicedFrames < kSpeechFrames || !capture->strongInRun) {
             return kDSPetSpeechNoEvent;
         }
         copyHistory(capture);
