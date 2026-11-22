@@ -1,6 +1,8 @@
 #ifndef DSPET_CONSOLE_TESTS_H
 #define DSPET_CONSOLE_TESTS_H
 
+#include <stdbool.h>
+
 #include "esp_err.h"
 
 /**
@@ -20,5 +22,11 @@ int DSPetConsoleTestsRunCommand(int argc, char **argv);
 
 /** @brief 显示已注册的测试子命令。 */
 void DSPetConsoleTestsHelp(void);
+
+/**
+ * @brief 查询诊断任务是否正在使用音频设备。
+ * @return 有测试运行时为 true，等待人工确认时为 false。
+ */
+bool DSPetConsoleTestsAudioBusy(void);
 
 #endif

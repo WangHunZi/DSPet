@@ -8,7 +8,7 @@
 #include "DSPetSpeechDetector.h"
 #include "esp_heap_caps.h"
 
-enum { kPlaybackToMicUs = 2100, kFilterLeadUs = 1000, kRecordSamples = 4 * kDSPetAudioDeviceSampleRateHz };
+enum { kPlaybackToMicUs = 2100, kFilterLeadUs = 1000 };
 
 struct DSPetNearSpeech {
     DSPetAecSync         sync;
@@ -17,7 +17,7 @@ struct DSPetNearSpeech {
     DSPetSpeechDetector *detector;
     int16_t             *aecBuffers;
     size_t               aecSamples;
-    int16_t              recording[kRecordSamples];
+    int16_t              recording[kDSPetNearSpeechMaxRecordingSamples];
     int16_t              pending[kDSPetSpeechFrameSamples];
     size_t               pendingSamples;
     float                peakRms;
@@ -57,7 +57,7 @@ void DSPetNearSpeechReset(DSPetNearSpeech *speech, bool restartTimeline) {
     if (restartTimeline) {
         DSPetAecSyncInit(&speech->sync, kPlaybackToMicUs - kFilterLeadUs);
     }
-    DSPetSpeechCaptureInit(&speech->capture, speech->recording, kRecordSamples);
+    DSPetSpeechCaptureInit(&speech->capture, speech->recording, kDSPetNearSpeechMaxRecordingSamples);
     speech->pendingSamples = 0;
     speech->peakRms        = 0;
 }

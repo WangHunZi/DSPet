@@ -7,14 +7,58 @@
 #ifdef CONFIG_DSPET_CONSOLE_TESTS
 #include "DSPetConsoleTests.h"
 #endif
+#ifdef CONFIG_DSPET_LOCAL_VOICE
+#include "DSPetLocalVoice.h"
+#endif
 #include <stdio.h>
 #include <string.h>
 
 static const char *const kTag = "console";
 
+#ifdef CONFIG_DSPET_LOCAL_VOICE
+static void printVoiceStatus(void) {
+    const char *const modes[] = {
+        [kDSPetLocalVoiceOff]      = "off",
+        [kDSPetLocalVoiceStarting] = "starting",
+        [kDSPetLocalVoiceOn]       = "on",
+        [kDSPetLocalVoiceStopping] = "stopping",
+    };
+    printf("DSPET_VOICE_STATUS mode=%s state=%s\n",
+           modes[DSPetLocalVoiceGetMode()],
+           DSPetLocalVoiceStateName(DSPetLocalVoiceGetState()));
+}
+
+static int handleVoice(const char *action) {
+    if (strcmp(action, "status") == 0) {
+        printVoiceStatus();
+        return 0;
+    }
+
+    esp_err_t error = ESP_ERR_INVALID_ARG;
+    if (strcmp(action, "start") == 0) {
+        error = DSPetLocalVoiceStart();
+    } else if (strcmp(action, "disable") == 0) {
+        error = DSPetLocalVoiceSetEnabled(false);
+    } else if (strcmp(action, "enable") == 0) {
+#ifdef CONFIG_DSPET_CONSOLE_TESTS
+        if (DSPetConsoleTestsAudioBusy()) {
+            puts("DSPET_ERROR audio_test_running");
+            return 1;
+        }
+#endif
+        error = DSPetLocalVoiceSetEnabled(true);
+    }
+    printf("DSPET_VOICE_COMMAND action=%s result=%s\n", action, esp_err_to_name(error));
+    return error == ESP_OK ? 0 : 1;
+}
+#endif
+
 static void printHelp(void) {
     puts("dspet help");
     puts("dspet info");
+#ifdef CONFIG_DSPET_LOCAL_VOICE
+    puts("dspet voice <status|start|disable|enable>");
+#endif
 #ifdef CONFIG_DSPET_CONSOLE_TESTS
     DSPetConsoleTestsHelp();
 #endif
@@ -30,6 +74,11 @@ static int handleCommand(int argc, char **argv) {
         printf("DSPET_INFO project=%s version=%s idf=%s\n", app->project_name, app->version, app->idf_ver);
         return 0;
     }
+#ifdef CONFIG_DSPET_LOCAL_VOICE
+    if (argc == 3 && strcmp(argv[1], "voice") == 0) {
+        return handleVoice(argv[2]);
+    }
+#endif
 #ifdef CONFIG_DSPET_CONSOLE_TESTS
     if (strcmp(argv[1], "test") == 0) {
         return DSPetConsoleTestsRunCommand(argc - 2, argv + 2);

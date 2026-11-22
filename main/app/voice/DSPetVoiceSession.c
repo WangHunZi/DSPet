@@ -2,6 +2,9 @@
 
 static void listen(DSPetVoiceSession *session, bool recording) {
     ++session->turnId;
+    if (!session->turnId) {
+        ++session->turnId;
+    }
     session->state     = kDSPetVoiceListening;
     session->recording = recording;
 }

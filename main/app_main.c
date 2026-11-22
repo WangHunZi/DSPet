@@ -16,13 +16,16 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "sdkconfig.h"
+#ifdef CONFIG_DSPET_LOCAL_VOICE
+#include "DSPetLocalVoice.h"
+#endif
 
 static const char *const kTag = "pet";
 
-#ifdef CONFIG_DSPET_PLAYBACK_DEMO
-static const DSPetClip *speakingClip(void) {
+#if defined(CONFIG_DSPET_PLAYBACK_DEMO) || defined(CONFIG_DSPET_LOCAL_VOICE)
+static const DSPetClip *findClip(const char *name) {
     for (size_t i = 0; i < PET_CLIP_COUNT; ++i) {
-        if (strcmp(pet_clips[i].name, "wave") == 0) {
+        if (strcmp(pet_clips[i].name, name) == 0) {
             return &pet_clips[i];
         }
     }
@@ -41,6 +44,17 @@ static void runPet(void) {
              "Free internal heap after decoder init: %u bytes",
              (unsigned) heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
     bool demoEnabled = false;
+#ifdef CONFIG_DSPET_LOCAL_VOICE
+    ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetLocalVoiceInit());
+    const DSPetClip *listening      = findClip("stretch");
+    const DSPetClip *waiting        = findClip("sleep");
+    const DSPetClip *speaking       = findClip("wave");
+    DSPetVoiceState  lastVoice      = kDSPetVoiceIdle;
+    int64_t          voiceStartedUs = 0;
+#endif
+#ifdef CONFIG_DSPET_SERIAL_SHELL
+    ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetConsoleStart());
+#endif
 #ifdef CONFIG_DSPET_PLAYBACK_DEMO
     esp_err_t demoResult = DSPetPlaybackDemoInit();
     demoEnabled          = demoResult == ESP_OK;
@@ -49,9 +63,14 @@ static void runPet(void) {
     } else {
         ESP_LOGW(kTag, "Speech demo unavailable: %s", esp_err_to_name(demoResult));
     }
-    const DSPetClip *speaking = speakingClip();
+    const DSPetClip *speaking = findClip("wave");
 #endif
-    if (!demoEnabled) {
+#ifdef CONFIG_DSPET_LOCAL_VOICE
+    if (DSPetLocalVoiceGetMode() != kDSPetLocalVoiceOff) {
+        ESP_LOGI(kTag, "BOOT starts a voice session; say the wake word for hands-free use");
+    } else
+#endif
+        if (!demoEnabled) {
         ESP_LOGI(kTag, "BOOT switches through %u clips", (unsigned) PET_CLIP_COUNT);
     }
 
@@ -59,6 +78,12 @@ static void runPet(void) {
     uint32_t         presses = 0;
     for (;;) {
         DSPetButtonTakeCount(&presses);
+#ifdef CONFIG_DSPET_LOCAL_VOICE
+        if (presses && DSPetLocalVoiceGetMode() != kDSPetLocalVoiceOff) {
+            DSPetLocalVoiceStart();
+            presses = 0;
+        }
+#endif
 #ifdef CONFIG_DSPET_PLAYBACK_DEMO
         if (demoEnabled) {
             DSPetPlaybackDemoUpdate(presses);
@@ -76,6 +101,17 @@ static void runPet(void) {
 #ifdef CONFIG_DSPET_PLAYBACK_DEMO
         if (demoEnabled && DSPetPlaybackDemoSpeaking(&startedUs)) {
             clip = speaking;
+        }
+#endif
+#ifdef CONFIG_DSPET_LOCAL_VOICE
+        const DSPetVoiceState voice = DSPetLocalVoiceGetState();
+        if (voice != lastVoice) {
+            lastVoice      = voice;
+            voiceStartedUs = esp_timer_get_time();
+        }
+        if (voice != kDSPetVoiceIdle) {
+            startedUs = voiceStartedUs;
+            clip      = voice == kDSPetVoiceListening ? listening : voice == kDSPetVoiceWaiting ? waiting : speaking;
         }
 #endif
         int64_t nextFrameUs;
@@ -100,8 +136,5 @@ void app_main(void) {
     DSPetAudioCheckRun();
 #endif
     ESP_ERROR_CHECK(DSPetButtonStart());
-#ifdef CONFIG_DSPET_SERIAL_SHELL
-    ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetConsoleStart());
-#endif
     runPet();
 }

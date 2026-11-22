@@ -16,6 +16,9 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "sdkconfig.h"
+#ifdef CONFIG_DSPET_LOCAL_VOICE
+#include "DSPetLocalVoice.h"
+#endif
 #ifdef CONFIG_DSPET_AEC
 #include "DSPetAecTest.h"
 #include "DSPetBargeInQuietTest.h"
@@ -110,6 +113,7 @@ esp_err_t DSPetConsoleTestsInit(void) {
         sRequests = NULL;
         return ESP_ERR_NO_MEM;
     }
+#ifndef CONFIG_DSPET_LOCAL_VOICE
     esp_err_t error = DSPetPlaybackInit();
     if (error != ESP_OK) {
         vTaskDelete(task);
@@ -117,7 +121,12 @@ esp_err_t DSPetConsoleTestsInit(void) {
         sRequests = NULL;
     }
     return error;
+#else
+    return ESP_OK;
+#endif
 }
+
+bool DSPetConsoleTestsAudioBusy(void) { return atomic_load(&sState) == kTestRunning; }
 
 void DSPetConsoleTestsHelp(void) {
     for (size_t i = 0; i < sizeof(kCases) / sizeof(kCases[0]); ++i) {
@@ -128,6 +137,12 @@ void DSPetConsoleTestsHelp(void) {
 }
 
 static int startTest(const TestCase *test) {
+#ifdef CONFIG_DSPET_LOCAL_VOICE
+    if (DSPetLocalVoiceGetMode() != kDSPetLocalVoiceOff) {
+        puts("DSPET_ERROR voice_owns_audio; run dspet voice disable");
+        return 1;
+    }
+#endif
     TestState state = atomic_load(&sState);
     if (!sRequests || state == kTestRunning || state == kTestWaiting) {
         puts("DSPET_ERROR test_runner_busy_or_unavailable");

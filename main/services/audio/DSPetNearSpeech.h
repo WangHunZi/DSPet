@@ -8,6 +8,8 @@
 /** @brief 单次聆听的回声消除、人声判定与录音服务。 */
 typedef struct DSPetNearSpeech DSPetNearSpeech;
 
+enum { kDSPetNearSpeechMaxRecordingSamples = 4 * kDSPetAudioDeviceSampleRateHz };
+
 /** @brief 本帧的聆听条件。 */
 typedef enum {
     kDSPetNearSpeechDisarmed,  /**< 仅对齐和预热，不产生开口事件。 */
