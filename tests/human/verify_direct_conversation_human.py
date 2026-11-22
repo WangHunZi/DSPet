@@ -32,9 +32,31 @@ def verify(board):
     print("DSPET_HOST_TEST direct_barge_in_serial=pass", flush=True)
 
 
+def verify_recording_display(board):
+    board.status()
+    board.command("dspet voice always on")
+    turn = board.expect(r"DSPET_VOICE event=always_start state=listening turn=(\d+)").group(1)
+    board.expect(r"DSPET_PET_FRAME clip=idle frame=0 draw_us=\d+")
+    print("DSPET_HOST_READY recording_display", flush=True)
+    print("串口已就绪。直接问「你今天想吃大白饭还是面条」，然后等她播完。", flush=True)
+    board.expect(fr"DSPET_VOICE event=speech_start state=recording turn={turn}\b", 90)
+    board.expect(r"DSPET_PET_FRAME clip=stretch frame=0 draw_us=\d+", 5)
+    board.expect(fr"DSPET_VOICE event=speech_end state=waiting turn={turn}\b", 12)
+    board.expect(r"DSPET_PET_FRAME clip=idle frame=0 draw_us=\d+")
+    expect_asr(board, turn)
+    board.expect(fr"DSPET_VOICE event=playback_started state=speaking turn={turn}\b", 50)
+    board.expect(r"DSPET_VOICE event=playback_finished state=listening turn=\d+", 45)
+    board.expect(r"DSPET_PET_FRAME clip=idle frame=0 draw_us=\d+")
+    print("DSPET_HOST_TEST recording_display=pass", flush=True)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", required=True)
+    parser.add_argument("--recording-display", action="store_true", help="验收免唤醒等开口与收音画面，完成后保持开启")
     args = parser.parse_args()
     with Board(args.port) as board:
-        verify(board)
+        if args.recording_display:
+            verify_recording_display(board)
+        else:
+            verify(board)

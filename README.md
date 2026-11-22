@@ -277,4 +277,6 @@ python3 tests/hardware/verify_direct_conversation.py --port /dev/cu.usbmodem1101
   --ssid 实际SSID --exercise-always --keep-enabled
 ```
 
+可用 `python3 tests/human/verify_direct_conversation_human.py --port /dev/cu.usbmodem1101 --recording-display` 验收等开口、收音和回复结束后的画面。
+
 真人检查时再次开启免唤醒，直接问「你是谁？你最爱吃什么？」，听她是否按角色回答。之后可以随口说「今天有点闷」，检查没点名时也能接话。遇到静默时，通过串口的 ASR 和 `direct_ignored` 日志区分识别与回应结果。
