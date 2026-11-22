@@ -251,11 +251,13 @@ static bool addMessage(cJSON *messages, const char *role, const char *content) {
 }
 
 static const char kAddressingPrompt[] =
-    "当前是桌宠的免唤醒模式。最后一条 user 消息只是麦克风拾到的语音转写。"
-    "根据当前话语和最近对话判断是否在对你说话。清楚的提问、请求或对话中的追问可以直接回复，无需喊名字。"
-    "忽略明显的自言自语、口述备忘、和别人说话、媒体声音，以及无法判断对象的碎片。"
-    "按 JSON 格式输出。该回应时输出 {\"action\":\"reply\",\"reply\":\"你想说的话\"}，"
-    "reply 里只放自然的朗读正文。该忽略时输出 {\"action\":\"ignore\"}。";
+    "当前是桌宠的免唤醒模式。最后一条 user 消息是麦克风拾到的语音转写，默认保持静默。"
+    "语句有明确的问题、请求、对桌宠的招呼，或承接最近问答的续聊时才回应，无需喊名字。"
+    "自言自语、口述备忘、对旁人说话、媒体声音都静默。没有问答上下文时，"
+    "单独的陈述、应声和没说完的片段也静默，不要替片段补出问题或主动追问。"
+    "例如「一加一等于几」是提问，「我知道了，现在这个画面」是片段。"
+    "按 JSON 格式输出。回应时输出 {\"action\":\"reply\",\"reply\":\"你想说的话\"}，"
+    "reply 里只放自然的朗读正文。静默时输出 {\"action\":\"ignore\"}。";
 
 static esp_err_t copyReply(const char *content, char *reply, size_t capacityBytes) {
     if (!content || strspn(content, " \t\r\n") == strlen(content)) {
