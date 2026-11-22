@@ -21,7 +21,12 @@ esp_err_t DSPetAnimationInit(size_t pixelCount) {
     if (pixelCount < kDSPetIndexedFramePaletteBytes || pixelCount > SIZE_MAX / 2) {
         return ESP_ERR_INVALID_ARG;
     }
+#ifdef CONFIG_DSPET_DIRECT_TEST
+    // 面板发送前会复制到独立的 DMA 缓冲，解码帧可放在 PSRAM。
+    uint8_t *decoded = heap_caps_malloc(pixelCount * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
     uint8_t *decoded = heap_caps_malloc(pixelCount * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+#endif
 #ifdef CONFIG_DSPET_LOCAL_VOICE
     // 上一帧索引仅供 CPU 恢复差分，将内部 RAM 留给语音模型和 DMA。
     uint8_t *previous = heap_caps_malloc(pixelCount, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
