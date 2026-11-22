@@ -1,6 +1,7 @@
 """组织语音问答、最近的会话历史和回合取消。"""
 
 from collections import OrderedDict, deque
+from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event, Lock
@@ -54,11 +55,12 @@ class _Session:
 class TurnResult:
     transcript: str
     reply: str
-    pcm: bytes
+    audio_bytes: int
     asr_seconds: float
     chat_seconds: float
     tts_first_audio_seconds: float
     tts_seconds: float
+    first_output_seconds: float
     total_seconds: float
 
 
@@ -108,7 +110,7 @@ class Conversation:
                     return True
             return session.last_turn_id == turn_id
 
-    def run(self, session_id, turn_id, pcm):
+    def run(self, session_id, turn_id, pcm, on_audio):
         validate_input(pcm)
         started = time.monotonic()
         session, active, messages = self._begin(session_id, turn_id, started)
@@ -121,9 +123,29 @@ class Conversation:
             messages.append({"role": "user", "content": transcript})
             reply = self._provider.reply(messages, active.remaining)
             chat_finished = time.monotonic()
-            synthesis = self._provider.synthesize(reply, active.remaining)
-            tts_finished = time.monotonic()
-            audio = resample_reply(synthesis.pcm, active.remaining())
+            tts_first = None
+            tts_finished = None
+            first_output = None
+            audio_bytes = 0
+
+            def source():
+                nonlocal tts_first, tts_finished
+                with closing(self._provider.synthesize(reply, active.remaining)) as chunks:
+                    for chunk in chunks:
+                        if tts_first is None:
+                            tts_first = time.monotonic()
+                        yield chunk
+                tts_finished = time.monotonic()
+
+            with closing(resample_reply(source(), active.remaining)) as converted:
+                for block in converted:
+                    active.remaining()
+                    if first_output is None:
+                        first_output = time.monotonic()
+                    on_audio(block)
+                    audio_bytes += len(block)
+            if not audio_bytes:
+                raise GatewayError("invalid_tts_audio", 502, "合成音频转换后没有可播放的样本。")
 
             with self._lock:
                 active.remaining()
@@ -131,10 +153,12 @@ class Conversation:
                 session.active = None
 
             return TurnResult(
-                transcript, reply, audio, asr_finished - started, chat_finished - asr_finished,
-                synthesis.first_audio_seconds, tts_finished - chat_finished, time.monotonic() - started,
+                transcript, reply, audio_bytes, asr_finished - started, chat_finished - asr_finished,
+                tts_first - chat_finished, tts_finished - chat_finished, first_output - started,
+                time.monotonic() - started,
             )
         finally:
+            active.cancelled.set()
             with self._lock:
                 if session.active is active:
                     session.active = None

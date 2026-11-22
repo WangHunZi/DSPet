@@ -35,7 +35,7 @@ def create_server(address, conversation, device_token):
         def log_message(self, *_args):
             pass
 
-        def _send(self, status, mime, body, headers=None):
+        def _send(self, status, mime, body):
             self.close_connection = True
             self.send_response(status)
             if mime:
@@ -43,8 +43,6 @@ def create_server(address, conversation, device_token):
             if status != 204:
                 self.send_header("Content-Length", str(len(body)))
             self.send_header("Connection", "close")
-            for name, value in (headers or {}).items():
-                self.send_header(name, value)
             self.end_headers()
             if body:
                 self.wfile.write(body)
@@ -77,17 +75,38 @@ def create_server(address, conversation, device_token):
         def _run_turn(self):
             session_id = self._session_id()
             turn_id = _parse_turn_id(self.headers.get("X-Turn-Id"))
-            result = conversation.run(session_id, turn_id, self._input_pcm())
+            pcm = self._input_pcm()
+            streaming = False
+
+            def send_audio(block):
+                nonlocal streaming
+                if not streaming:
+                    self.close_connection = True
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/octet-stream")
+                    self.send_header("Transfer-Encoding", "chunked")
+                    self.send_header("Connection", "close")
+                    self.send_header("X-Turn-Id", str(turn_id))
+                    self.send_header("X-PCM-Rate", str(DEVICE_RATE))
+                    self.end_headers()
+                    streaming = True
+                self.wfile.write(f"{len(block):x}\r\n".encode() + block + b"\r\n")
+
+            try:
+                result = conversation.run(session_id, turn_id, pcm, send_audio)
+            except GatewayError as error:
+                if not streaming:
+                    raise
+                # 半途失败时省略结束块，客户端可区分完整 PCM 和截断的回复。
+                _LOGGER.info("turn=%d stream_error=%s", turn_id, error.code)
+                return
+            self.wfile.write(b"0\r\n\r\n")
             _LOGGER.info(
-                "turn=%d asr_ms=%.0f chat_ms=%.0f tts_first_ms=%.0f tts_ms=%.0f ready_ms=%.0f bytes=%d",
+                "turn=%d asr_ms=%.0f chat_ms=%.0f tts_first_ms=%.0f tts_ms=%.0f first_pcm_ms=%.0f total_ms=%.0f bytes=%d",
                 turn_id, 1000 * result.asr_seconds, 1000 * result.chat_seconds,
                 1000 * result.tts_first_audio_seconds, 1000 * result.tts_seconds,
-                1000 * result.total_seconds, len(result.pcm),
+                1000 * result.first_output_seconds, 1000 * result.total_seconds, result.audio_bytes,
             )
-            self._send(200, "application/octet-stream", result.pcm, {
-                "X-Turn-Id": str(turn_id),
-                "X-PCM-Rate": str(DEVICE_RATE),
-            })
 
         def _cancel_turn(self):
             session_id = self._session_id()

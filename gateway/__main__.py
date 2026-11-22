@@ -30,15 +30,15 @@ def _run_wav(args, conversation):
     args.output_dir.mkdir(parents=True, exist_ok=True)
     session_id = uuid.uuid4().hex
     for turn_id, path in enumerate(args.audio, start=1):
-        result = conversation.run(session_id, turn_id, read_wav(path))
+        audio = bytearray()
+        result = conversation.run(session_id, turn_id, read_wav(path), audio.extend)
         output = args.output_dir / f"reply-{turn_id}.wav"
-        output.write_bytes(wrap_wav(result.pcm))
+        output.write_bytes(wrap_wav(audio))
         print(f"第 {turn_id} 轮转写 {result.transcript}", flush=True)
         print(f"回复 {result.reply}", flush=True)
-        first = result.asr_seconds + result.chat_seconds + result.tts_first_audio_seconds
         print(
             f"ASR {result.asr_seconds:.2f}s · 对话 {result.chat_seconds:.2f}s · "
-            f"TTS {result.tts_seconds:.2f}s · 上游首批音频 {first:.2f}s · "
+            f"TTS {result.tts_seconds:.2f}s · 首批可播放音频 {result.first_output_seconds:.2f}s · "
             f"音频可用 {result.total_seconds:.2f}s\n{output}",
             flush=True,
         )

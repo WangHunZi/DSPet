@@ -1,10 +1,8 @@
 """DeepSeek 官方语音和对话接口适配。"""
 
 from contextlib import contextmanager
-from dataclasses import dataclass
 from http.client import HTTPException
 import json
-import time
 import urllib.error
 import urllib.request
 import uuid
@@ -19,12 +17,6 @@ _MAX_JSON_BYTES = 512 * 1024
 class _RejectRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, response, code, message, headers, url):
         return None
-
-
-@dataclass(frozen=True)
-class SynthesizedSpeech:
-    pcm: bytes
-    first_audio_seconds: float
 
 
 class DeepSeek:
@@ -60,23 +52,24 @@ class DeepSeek:
             raise GatewayError("upstream_connection", 502, "DeepSeek 响应连接中断。") from error
 
     @staticmethod
-    def _read(response, limit, remaining):
-        result = bytearray()
+    def _chunks(response, limit, remaining):
+        received = 0
         while True:
             remaining()
-            chunk = response.read1(min(8192, limit - len(result) + 1))
+            chunk = response.read1(min(4096, limit - received + 1))
+            remaining()
             if not chunk:
-                remaining()
-                return bytes(result)
-            result.extend(chunk)
-            if len(result) > limit:
+                return
+            received += len(chunk)
+            if received > limit:
                 raise GatewayError("upstream_response_too_large", 502, "DeepSeek 响应超过网关容量。")
+            yield chunk
 
     @classmethod
     def _read_json(cls, response, remaining):
         try:
-            return json.loads(cls._read(response, _MAX_JSON_BYTES, remaining))
-        except (ValueError, UnicodeError) as error:
+            return json.loads(b"".join(cls._chunks(response, _MAX_JSON_BYTES, remaining)))
+        except ValueError as error:
             raise GatewayError("invalid_upstream_response", 502, "DeepSeek 返回的 JSON 无效。") from error
 
     def transcribe(self, wav, remaining):
@@ -113,7 +106,6 @@ class DeepSeek:
 
     def synthesize(self, text, remaining):
         body = json.dumps({"text": text, "voice_id": "stella", "format": "pcm"}, ensure_ascii=False).encode()
-        started = time.monotonic()
         with self._request("/v1/tools/tts", body, "application/json", remaining) as response:
             encoding = response.headers
             if encoding.get_content_type() != "audio/pcm" or any(
@@ -121,10 +113,9 @@ class DeepSeek:
                 for name, default in (("rate", str(SYNTHESIS_RATE)), ("bits", "16"), ("channels", "1"))
             ):
                 raise GatewayError("invalid_tts_audio", 502, "DeepSeek 返回的音频格式与 PCM16 单声道约定不符。")
-            remaining()
-            first = response.read1(1024)
-            first_audio_seconds = time.monotonic() - started
-            pcm = first + self._read(response, MAX_REPLY_BYTES - len(first), remaining) if first else b""
-            if not pcm or len(pcm) % SAMPLE_BYTES or response.length not in (0, None):
+            received = 0
+            for chunk in self._chunks(response, MAX_REPLY_BYTES, remaining):
+                received += len(chunk)
+                yield chunk
+            if not received or received % SAMPLE_BYTES or response.length not in (0, None):
                 raise GatewayError("invalid_tts_audio", 502, "DeepSeek 返回的音频为空或传输不完整。")
-        return SynthesizedSpeech(pcm, first_audio_seconds)
