@@ -172,7 +172,7 @@ esp_err_t DSPetDirectTestRun(void) {
     if (error == ESP_OK) {
         const char *question =
             sSettings.shortReply ? "一加一等于几？只回答一个汉字。" : "海水为什么是咸的？用一句话回答。";
-        error = DSPetDeepSeekReply(sSettings.key, question, NULL, reply, sizeof(reply), NULL);
+        error = DSPetDeepSeekReply(sSettings.key, question, NULL, false, reply, sizeof(reply), NULL);
     }
     if (error == ESP_OK) {
         printf("DSPET_DIRECT_REPLY %s\n", reply);

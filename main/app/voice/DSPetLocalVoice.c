@@ -196,7 +196,7 @@ static esp_err_t advanceDirect(LocalVoice *voice) {
         } else {
             recording = DSPetNearSpeechRecording(voice->speech, &samples, &preRoll);
         }
-        esp_err_t error = DSPetDirectVoiceSubmit(voice->direct, turn, recording, samples, voice->newSession);
+        esp_err_t error = DSPetDirectVoiceSubmit(voice->direct, turn, recording, samples, voice->newSession, false);
         if (error != ESP_OK) {
             return error;
         }

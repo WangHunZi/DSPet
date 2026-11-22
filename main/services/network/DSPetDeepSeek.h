@@ -51,18 +51,20 @@ esp_err_t DSPetDeepSeekTranscribe(const char                *key,
                                   const DSPetDeepSeekCancel *cancel);
 
 /**
- * @brief 用项目角色提示生成完整的朗读正文。
+ * @brief 用项目角色提示生成完整的朗读正文，可先判断转写是否在对桌宠说话。
  * @param[in] key 调用期间借用的 DeepSeek 凭据。
  * @param[in] question UTF-8 文本问题。
  * @param[in] history 可空的上一轮问答。
+ * @param[in] addressedOnly 为 true 时，模型可忽略没有对桌宠说的话。
  * @param[out] reply 成功时写入以 NUL 结束的 UTF-8 回复。
  * @param[in] capacityBytes 输出缓冲字节数，包含终止符。
  * @param[in] cancel 可空的取消标记。
- * @return ESP_OK 表示获得完整回复，其余为上游、格式、传输或取消错误。
+ * @return ESP_OK 表示获得完整回复，ESP_ERR_NOT_FOUND 表示模型选择忽略，其余为上游、格式、传输或取消错误。
  */
 esp_err_t DSPetDeepSeekReply(const char                 *key,
                              const char                 *question,
                              const DSPetDeepSeekHistory *history,
+                             bool                        addressedOnly,
                              char                       *reply,
                              size_t                      capacityBytes,
                              const DSPetDeepSeekCancel  *cancel);

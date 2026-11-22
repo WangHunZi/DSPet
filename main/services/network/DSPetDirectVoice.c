@@ -52,6 +52,7 @@ struct DSPetDirectVoice {
     uint32_t             turnId;
     uint32_t             priorTurnId;
     bool                 priorInterrupted;
+    bool                 addressedOnly;
     size_t               samples;
     DSPetPcm24kTo16k     converter;
     size_t               produced;
@@ -136,6 +137,7 @@ static esp_err_t runTurn(DSPetDirectVoice *voice) {
     error = DSPetDeepSeekReply(voice->settings.key,
                                buffer->question,
                                *buffer->priorReply ? &history : NULL,
+                               voice->addressedOnly,
                                buffer->reply,
                                sizeof(buffer->reply),
                                &cancel);
@@ -223,8 +225,12 @@ esp_err_t DSPetDirectVoiceCreate(const DSPetDirectSettings *settings, DSPetDirec
     return ESP_OK;
 }
 
-esp_err_t DSPetDirectVoiceSubmit(
-    DSPetDirectVoice *voice, uint32_t turnId, const int16_t *samples, size_t sampleCount, bool newSession) {
+esp_err_t DSPetDirectVoiceSubmit(DSPetDirectVoice *voice,
+                                 uint32_t          turnId,
+                                 const int16_t    *samples,
+                                 size_t            sampleCount,
+                                 bool              newSession,
+                                 bool              addressedOnly) {
     if (!atomic_load(&voice->complete)) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -237,10 +243,11 @@ esp_err_t DSPetDirectVoiceSubmit(
     } else if (voice->priorTurnId == voice->turnId && atomic_load(&voice->cancelled)) {
         voice->priorInterrupted = true;
     }
-    voice->turnId    = turnId;
-    voice->samples   = sampleCount;
-    voice->converter = (DSPetPcm24kTo16k) {0};
-    voice->produced  = 0;
+    voice->turnId        = turnId;
+    voice->samples       = sampleCount;
+    voice->addressedOnly = addressedOnly;
+    voice->converter     = (DSPetPcm24kTo16k) {0};
+    voice->produced      = 0;
     memcpy(voice->buffers->recording, samples, sampleCount * sizeof(*samples));
     atomic_store(&voice->gaps, 0);
     atomic_store(&voice->firstAudioMs, 0);

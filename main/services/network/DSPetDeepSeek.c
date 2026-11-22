@@ -250,7 +250,40 @@ static bool addMessage(cJSON *messages, const char *role, const char *content) {
     return true;
 }
 
-static esp_err_t parseReply(JsonResponse *response, char *reply, size_t capacityBytes) {
+static const char kAddressingPrompt[] =
+    "当前是桌宠的免唤醒模式。最后一条 user 消息只是麦克风拾到的语音转写。"
+    "根据当前话语和最近对话判断是否在对你说话。清楚的提问、请求或对话中的追问可以直接回复，无需喊名字。"
+    "忽略明显的自言自语、口述备忘、和别人说话、媒体声音，以及无法判断对象的碎片。"
+    "按 JSON 格式输出。该回应时输出 {\"action\":\"reply\",\"reply\":\"你想说的话\"}，"
+    "reply 里只放自然的朗读正文。该忽略时输出 {\"action\":\"ignore\"}。";
+
+static esp_err_t copyReply(const char *content, char *reply, size_t capacityBytes) {
+    if (!content || strspn(content, " \t\r\n") == strlen(content)) {
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    const size_t count = strlen(content) + 1;
+    if (count > capacityBytes) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(reply, content, count);
+    return ESP_OK;
+}
+
+static esp_err_t parseAddressedReply(const char *content, char *reply, size_t capacityBytes) {
+    cJSON      *decision = cJSON_ParseWithOpts(content, NULL, true);
+    const char *action   = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(decision, "action"));
+    esp_err_t   error    = ESP_ERR_INVALID_RESPONSE;
+    if (action && strcmp(action, "reply") == 0) {
+        error =
+            copyReply(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(decision, "reply")), reply, capacityBytes);
+    } else if (action && strcmp(action, "ignore") == 0) {
+        error = ESP_ERR_NOT_FOUND;
+    }
+    cJSON_Delete(decision);
+    return error;
+}
+
+static esp_err_t parseReply(JsonResponse *response, bool addressedOnly, char *reply, size_t capacityBytes) {
     response->data[response->size] = '\0';
     cJSON      *data               = cJSON_ParseWithLength(response->data, response->size + 1);
     cJSON      *choices            = cJSON_GetObjectItemCaseSensitive(data, "choices");
@@ -259,14 +292,9 @@ static esp_err_t parseReply(JsonResponse *response, char *reply, size_t capacity
     cJSON      *message            = cJSON_GetObjectItemCaseSensitive(choice, "message");
     const char *content            = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(message, "content"));
     esp_err_t   error              = ESP_ERR_INVALID_RESPONSE;
-    if (finished && strcmp(finished, "stop") == 0 && content && *content) {
-        const size_t count = strlen(content) + 1;
-        if (count <= capacityBytes) {
-            memcpy(reply, content, count);
-            error = ESP_OK;
-        } else {
-            error = ESP_ERR_INVALID_SIZE;
-        }
+    if (finished && strcmp(finished, "stop") == 0 && content) {
+        error = addressedOnly ? parseAddressedReply(content, reply, capacityBytes)
+                              : copyReply(content, reply, capacityBytes);
     }
     cJSON_Delete(data);
     return error;
@@ -335,6 +363,7 @@ static bool addHistory(cJSON *messages, const DSPetDeepSeekHistory *history) {
 esp_err_t DSPetDeepSeekReply(const char                 *key,
                              const char                 *question,
                              const DSPetDeepSeekHistory *history,
+                             bool                        addressedOnly,
                              char                       *reply,
                              size_t                      capacityBytes,
                              const DSPetDeepSeekCancel  *cancel) {
@@ -348,13 +377,16 @@ esp_err_t DSPetDeepSeekReply(const char                 *key,
     if (messages && cJSON_AddStringToObject(body, "model", "deepseek-flash") &&
         cJSON_AddStringToObject(body, "reasoning_effort", "low") && cJSON_AddNumberToObject(body, "max_tokens", 512) &&
         addMessage(messages, "system", kSystemPrompt) && addHistory(messages, history) &&
+        (!addressedOnly ||
+         (cJSON_AddStringToObject(cJSON_AddObjectToObject(body, "response_format"), "type", "json_object") &&
+          addMessage(messages, "system", kAddressingPrompt))) &&
         addMessage(messages, "user", question)) {
         response.data = heap_caps_malloc(kReplyJsonBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (response.data) {
             error = postJson(
                 key, "https://api.deepseek.com/chat/completions", "chat", body, false, appendJson, &response, cancel);
             if (error == ESP_OK) {
-                error = parseReply(&response, reply, capacityBytes);
+                error = parseReply(&response, addressedOnly, reply, capacityBytes);
             }
         }
     }

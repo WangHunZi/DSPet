@@ -20,7 +20,7 @@ typedef struct {
     uint32_t  turnId;   /**< 当前持有缓冲的回合号，未提交时为零。 */
     bool      ready;    /**< 达到预缓冲门限或已收到较短的完整回复。 */
     bool      complete; /**< 网络任务已结束并释放 HTTPS 连接。 */
-    esp_err_t result;   /**< complete 时有效。 */
+    esp_err_t result;   /**< complete 时有效，ESP_ERR_NOT_FOUND 表示无有效转写或模型选择忽略。 */
 } DSPetDirectVoiceStatus;
 
 /**
@@ -39,11 +39,16 @@ esp_err_t DSPetDirectVoiceCreate(const DSPetDirectSettings *settings, DSPetDirec
  * @param[in] samples 16 kHz 单声道 PCM16。
  * @param[in] sampleCount 样本数，在板载单句容量以内。
  * @param[in] newSession 新会话时清除上一轮上下文。
+ * @param[in] addressedOnly 为 true 时，只回复对桌宠说的话。
  * @return ESP_OK 表示已提交，ESP_ERR_INVALID_STATE 表示上一轮仍在收尾。
  * @note 会话任务须先确认旧播放已到终态，录音在返回后可复用。
  */
-esp_err_t DSPetDirectVoiceSubmit(
-    DSPetDirectVoice *voice, uint32_t turnId, const int16_t *samples, size_t sampleCount, bool newSession);
+esp_err_t DSPetDirectVoiceSubmit(DSPetDirectVoice *voice,
+                                 uint32_t          turnId,
+                                 const int16_t    *samples,
+                                 size_t            sampleCount,
+                                 bool              newSession,
+                                 bool              addressedOnly);
 
 /**
  * @brief 读取当前回合的状态，供会话任务轮询。
