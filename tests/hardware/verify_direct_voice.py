@@ -6,6 +6,7 @@ from getpass import getpass
 from io import StringIO
 import json
 import sys
+import time
 
 from verify_local_voice import Board
 
@@ -59,7 +60,7 @@ def send_credentials(board, command, password, key):
 
 
 def run_direct(board, ssid, password, key):
-    command = f"dspet test hardware network direct {json.dumps(ssid, ensure_ascii=False)}"
+    command = f"dspet test hardware network direct {json.dumps(ssid, ensure_ascii=False)} {int(time.time())}"
     restore = voice_mode(board) == "on"
     if restore:
         board.command("dspet voice disable")

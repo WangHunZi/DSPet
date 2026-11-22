@@ -58,7 +58,7 @@ idf_component_register(
     PRIV_INCLUDE_DIRS "." "app" "hardware" "services/input" "services/animation" "services/audio" "ui" "diagnostics" "console"
                       "${CMAKE_CURRENT_BINARY_DIR}"
     REQUIRES console esp_app_format esp_lcd esp_driver_gpio esp_driver_spi esp_driver_i2s esp_timer esp_rom
-    PRIV_REQUIRES esp_wifi esp_netif esp_event esp_http_client mbedtls
+    PRIV_REQUIRES esp_wifi esp_netif esp_event esp_http_client mbedtls nvs_flash
     EMBED_FILES ${binaries})
 if(CONFIG_DSPET_AEC)
     if(NOT CONFIG_SPIRAM OR CONFIG_SPIRAM_USE_MEMMAP)

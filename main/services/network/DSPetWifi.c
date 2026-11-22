@@ -11,6 +11,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "mbedtls/platform_util.h"
+#include "nvs_flash.h"
 
 enum { kGotIp = BIT0, kDisconnected = BIT1, kJoinTimeoutMs = 17000 };
 
@@ -38,7 +39,12 @@ esp_err_t DSPetWifiOpen(void) {
         return ESP_ERR_INVALID_STATE;
     }
     if (!sInitialized) {
-        esp_err_t error = esp_netif_init();
+        // 射频校准使用 NVS。STA 凭据仍按 WIFI_STORAGE_RAM 配置。
+        esp_err_t error = nvs_flash_init();
+        if (error != ESP_OK) {
+            return error;
+        }
+        error = esp_netif_init();
         if (error != ESP_OK) {
             return error;
         }

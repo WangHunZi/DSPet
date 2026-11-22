@@ -4,25 +4,26 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/time.h>
 
 #include "DSPetAudioDevice.h"
 #include "DSPetDeepSeek.h"
 #include "DSPetPcm24kTo16k.h"
 #include "DSPetWifi.h"
 #include "esp_heap_caps.h"
-#include "esp_netif_sntp.h"
 #include "esp_timer.h"
 #include "mbedtls/platform_util.h"
 
-enum { kWriteTimeoutMs = 40, kDrainTimeoutMs = 120, kTimeSyncMs = 10000, kSpeakerAttenuation = 10 };
+enum { kWriteTimeoutMs = 40, kDrainTimeoutMs = 120, kSpeakerAttenuation = 10 };
 
 static struct {
-    char ssid[kDSPetWifiSsidBytes + 1];
-    char password[kDSPetWifiPasswordBytes + 1];
-    char key[kDSPetDeepSeekKeyBytes + 1];
+    char     ssid[kDSPetWifiSsidBytes + 1];
+    char     password[kDSPetWifiPasswordBytes + 1];
+    char     key[kDSPetDeepSeekKeyBytes + 1];
+    uint32_t unixTime;
 } sSettings;
 
-esp_err_t DSPetDirectTestPrepare(const char *ssid, const char *password, const char *key) {
+esp_err_t DSPetDirectTestPrepare(const char *ssid, const char *password, const char *key, uint32_t unixTime) {
     const size_t ssidBytes     = strlen(ssid);
     const size_t passwordBytes = password ? strlen(password) : 0;
     const size_t keyBytes      = key ? strlen(key) : 0;
@@ -32,6 +33,7 @@ esp_err_t DSPetDirectTestPrepare(const char *ssid, const char *password, const c
         return ESP_ERR_INVALID_ARG;
     }
     DSPetDirectTestClear();
+    sSettings.unixTime = unixTime;
     memcpy(sSettings.ssid, ssid, ssidBytes);
     if (password) {
         memcpy(sSettings.password, password, passwordBytes);
@@ -140,17 +142,6 @@ static esp_err_t playReply(const char *reply, int64_t startedUs) {
     return error == ESP_OK ? closed : error;
 }
 
-static esp_err_t syncClock(void) {
-    const esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("ntp.aliyun.com");
-    esp_err_t               error  = esp_netif_sntp_init(&config);
-    if (error == ESP_OK) {
-        error = esp_netif_sntp_sync_wait(pdMS_TO_TICKS(kTimeSyncMs));
-        esp_netif_sntp_deinit();
-    }
-    printf("DSPET_DIRECT_CLOCK result=%s\n", esp_err_to_name(error));
-    return error;
-}
-
 esp_err_t DSPetDirectTestRun(void) {
     heap_caps_monitor_local_minimum_free_size_start();
     printHeap("before_wifi");
@@ -162,7 +153,9 @@ esp_err_t DSPetDirectTestRun(void) {
     mbedtls_platform_zeroize(sSettings.password, sizeof(sSettings.password));
     if (error == ESP_OK) {
         printHeap("wifi_connected");
-        error = syncClock();
+        const struct timeval now = {.tv_sec = sSettings.unixTime};
+        error                    = settimeofday(&now, NULL) == 0 ? ESP_OK : ESP_FAIL;
+        printf("DSPET_DIRECT_CLOCK source=serial result=%s\n", esp_err_to_name(error));
     }
 
     const int64_t startedUs = esp_timer_get_time();
