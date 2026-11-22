@@ -40,11 +40,27 @@ def verify_fixture(board):
     asr = board.expect(fr"DSPET_DIRECT_ASR turn={turn} elapsed_us=\d+ text=\S+|DSPET_VOICE event=direct_error", 80)
     if "direct_error" in asr.group():
         raise RuntimeError("板载会话在取得 ASR 结果前失败。")
-    board.expect(fr"DSPET_DIRECT_STREAM turn={turn} before_end=1", 45)
-    board.expect(fr"DSPET_VOICE event=playback_started state=speaking turn={turn}\b", 8)
-    ended = board.expect(fr"DSPET_DIRECT_END turn={turn} result=\w+ cancelled=\d+ samples=\d+", 65)
-    if "result=ESP_OK cancelled=0" not in ended.group():
-        raise RuntimeError("自动用例播放未完整结束。")
+    started = False
+    buffered = None
+    gaps = None
+    patterns = [
+        fr"DSPET_DIRECT_STREAM turn={turn} before_end=([01])",
+        fr"DSPET_VOICE event=playback_started state=speaking turn={turn}\b",
+        fr"DSPET_DIRECT_END turn={turn} result=\w+ cancelled=\d+ samples=\d+ gaps=\d+",
+    ]
+    for _ in patterns:
+        event = board.expect("|".join(patterns), 70).group()
+        if event.startswith("DSPET_DIRECT_STREAM"):
+            buffered = event.endswith("before_end=0")
+        elif event.startswith("DSPET_VOICE"):
+            started = True
+        else:
+            if "result=ESP_OK cancelled=0" not in event:
+                raise RuntimeError("自动用例播放未完整结束。")
+            gaps = int(event.rsplit("gaps=", 1)[1])
+    if not started or buffered is None or gaps is None or (buffered and gaps != 0):
+        raise RuntimeError("串口未确认播放策略、收尾和缓冲结果。")
+    print(f"DSPET_HOST_METRIC direct_fixture buffered={int(buffered)} gaps={gaps}", flush=True)
     board.expect(r"DSPET_VOICE event=playback_finished state=listening turn=\d+", 40)
     board.expect(r"DSPET_VOICE event=listen_timeout state=idle turn=\d+", 12)
     print("DSPET_HOST_TEST direct_fixture=pass", flush=True)
@@ -56,17 +72,23 @@ def verify_fixture_barge_in(board):
     asr = board.expect(fr"DSPET_DIRECT_ASR turn={first} elapsed_us=\d+ text=\S+|DSPET_VOICE event=direct_error", 80)
     if "direct_error" in asr.group():
         raise RuntimeError("受控插话前的 ASR 请求失败。")
+    playback = board.expect(fr"DSPET_DIRECT_STREAM turn={first} before_end=[01]", 70)
+    streaming = playback.group().endswith("before_end=1")
     board.expect(fr"DSPET_VOICE event=playback_started state=speaking turn={first}\b", 75)
     board.command("dspet voice fixture")
     second = board.expect(r"DSPET_VOICE event=barge_in state=listening turn=(\d+)", 3).group(1)
     assert first != second
-    evidence = set()
-    for _ in range(2):
-        event = board.expect(
-            fr"DSPET_VOICE_DRAIN turn={first}\b|DSPET_DIRECT_END turn={first} result=\w+ cancelled=1", 6
-        )
-        evidence.add(event.group().split()[0])
-    assert len(evidence) == 2
+    if streaming:
+        evidence = set()
+        for _ in range(2):
+            event = board.expect(
+                fr"DSPET_VOICE_DRAIN turn={first}\b|DSPET_DIRECT_END turn={first} result=\w+ cancelled=1", 6
+            )
+            evidence.add(event.group().split()[0])
+        assert len(evidence) == 2
+    else:
+        board.expect(fr"DSPET_VOICE_DRAIN turn={first}\b", 3)
+    print(f"DSPET_HOST_METRIC barge_during_download={int(streaming)}", flush=True)
     asr = board.expect(fr"DSPET_DIRECT_ASR turn={second} elapsed_us=\d+ text=\S+|DSPET_VOICE event=direct_error", 80)
     if "direct_error" in asr.group():
         raise RuntimeError("旧回合已排空和关闭，下一轮 ASR 请求失败。")
