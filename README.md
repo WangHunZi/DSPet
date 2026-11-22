@@ -266,13 +266,13 @@ python3 tests/human/verify_direct_conversation_human.py --port /dev/cu.usbmodem1
 
 直连进入待机后，在板载 Shell 用 `dspet voice always on` 开启。屏幕进入聆听，可以直接对桌宠说话。`dspet voice status` 显示 `always=1`。`dspet voice always off` 停止当前回合并回到唤醒待机。此设置在重启或退出直连时清除。
 
-板端检测人声并分句。候选录音送到 DeepSeek ASR，DeepSeek V4 Flash 根据转写和最近问答决定是否回应。忽略时串口记录 `direct_ignored`，随后继续聆听。安静 8 秒以后仍然可以直接说话，下一轮用新的对话上下文。等待一轮网络回复时暂不接收下一句，开始播报后仍可本地插话。
+板端检测人声并分句。候选录音送到 DeepSeek ASR，DeepSeek V4 Flash 根据转写和最近问答决定是否回应。没点名的提问、招呼和日常感叹也可以接话，听不出意思的片段和明确的私人备忘可以静默。忽略时串口记录 `direct_ignored`，随后继续聆听。安静 8 秒以后仍然可以直接说话，下一轮用新的对话上下文。等待一轮网络回复时暂不接收下一句，开始播报后仍可本地插话。
 
-自动实机检查需要保持安静。以下命令先测普通直连，再验证跨过原有聆听超时后仍能提交回合、模型忽略板载自述、以及关闭免唤醒后回到唤醒待机。
+自动实机检查需要保持安静。以下命令先测普通直连，再验证跨过原有聆听超时后仍能提交回合、处理板载短句后继续聆听、以及关闭免唤醒后回到唤醒待机。
 
 ```sh
 python3 tests/hardware/verify_direct_conversation.py --port /dev/cu.usbmodem1101 \
   --ssid 实际SSID --exercise-always --keep-enabled
 ```
 
-真人检查时再次开启免唤醒，直接问「一加一等于几？只说答案」，听是否完整播报。等它重新聆听后说「我在给自己口述备忘，今晚备份照片」，确认串口有 ASR 结果和 `direct_ignored`，喇叭保持安静。
+真人检查时再次开启免唤醒，直接问「你是谁？你最爱吃什么？」，听她是否按角色回答。之后可以随口说「今天有点闷」，检查没点名时也能接话。遇到静默时，通过串口的 ASR 和 `direct_ignored` 日志区分识别与回应结果。

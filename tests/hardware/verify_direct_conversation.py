@@ -121,15 +121,18 @@ def verify_always_listening(board):
         board.command("dspet voice status")
         board.expect(r"DSPET_VOICE_STATUS mode=on state=listening always=1")
 
-        # 现有板载 PCM 是桌宠自述的头两秒，应有转写但无需回应。
+        # 这段语音只录到屏幕话题的开头，回复或静默都应回到聆听。
         board.command("dspet voice fixture")
         board.expect(fr"DSPET_VOICE event=fixture_end state=waiting turn={turn}\b")
         board.expect(fr"DSPET_DIRECT_ASR turn={turn} elapsed_us=\d+ text=\S+", 75)
         board.expect(r"DSPET_DIRECT_HTTP stage=chat status=200", 75)
-        end = board.expect(fr"DSPET_DIRECT_END turn={turn} result=\w+ cancelled=\d+ samples=\d+ gaps=\d+", 40)
-        if "result=ESP_ERR_NOT_FOUND cancelled=0 samples=0" not in end.group():
-            raise RuntimeError(f"免唤醒未静默忽略板载自述，实际结果为 {end.group()}")
-        board.expect(r"DSPET_VOICE event=direct_ignored state=listening turn=\d+")
+        end = board.expect(fr"DSPET_DIRECT_END turn={turn} result=\w+ cancelled=\d+ samples=\d+ gaps=\d+", 60)
+        if "result=ESP_OK cancelled=0" in end.group():
+            board.expect(r"DSPET_VOICE event=playback_finished state=listening turn=\d+", 40)
+        elif "result=ESP_ERR_NOT_FOUND cancelled=0 samples=0" in end.group():
+            board.expect(r"DSPET_VOICE event=direct_ignored state=listening turn=\d+")
+        else:
+            raise RuntimeError(f"免唤醒回合失败，实际结果为 {end.group()}")
     finally:
         board.command("dspet voice always off")
         board.expect(r"DSPET_VOICE event=always_stop state=idle turn=\d+")
@@ -145,7 +148,7 @@ def main():
     parser.add_argument("--keep-enabled", action="store_true", help="结束后继续保持直连，供人工测试")
     parser.add_argument("--setup-only", action="store_true", help="只完成配网和启动，留给人工测试")
     parser.add_argument("--exercise-cancel", action="store_true", help="再验证一轮受控插话和下一次 ASR")
-    parser.add_argument("--exercise-always", action="store_true", help="保持安静，验证免唤醒不超时以及忽略板载自述")
+    parser.add_argument("--exercise-always", action="store_true", help="保持安静，验证免唤醒不超时、回合结束后续听及关闭")
     args = parser.parse_args()
     if not sys.stdin.isatty():
         parser.error("需要在终端隐藏输入凭据。")

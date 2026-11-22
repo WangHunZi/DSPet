@@ -39,7 +39,7 @@ esp_err_t DSPetDirectVoiceCreate(const DSPetDirectSettings *settings, DSPetDirec
  * @param[in] samples 16 kHz 单声道 PCM16。
  * @param[in] sampleCount 样本数，在板载单句容量以内。
  * @param[in] newSession 新会话时清除上一轮上下文。
- * @param[in] addressedOnly 为 true 时，只回复对桌宠说的话。
+ * @param[in] allowIgnore 为 true 时，允许模型跳过当前录音。
  * @return ESP_OK 表示已提交，ESP_ERR_INVALID_STATE 表示上一轮仍在收尾。
  * @note 会话任务须先确认旧播放已到终态，录音在返回后可复用。
  */
@@ -48,7 +48,7 @@ esp_err_t DSPetDirectVoiceSubmit(DSPetDirectVoice *voice,
                                  const int16_t    *samples,
                                  size_t            sampleCount,
                                  bool              newSession,
-                                 bool              addressedOnly);
+                                 bool              allowIgnore);
 
 /**
  * @brief 读取当前回合的状态，供会话任务轮询。

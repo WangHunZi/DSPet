@@ -250,42 +250,42 @@ static bool addMessage(cJSON *messages, const char *role, const char *content) {
     return true;
 }
 
-static const char kAddressingPrompt[] =
-    "当前是桌宠的免唤醒模式。最后一条 user 消息是麦克风拾到的语音转写，默认保持静默。"
-    "语句有明确的问题、请求、对桌宠的招呼，或承接最近问答的续聊时才回应，无需喊名字。"
-    "自言自语、口述备忘、对旁人说话、媒体声音都静默。没有问答上下文时，"
-    "单独的陈述、应声和没说完的片段也静默，不要替片段补出问题或主动追问。"
-    "例如「一加一等于几」是提问，「我知道了，现在这个画面」是片段。"
-    "按 JSON 格式输出。回应时输出 {\"action\":\"reply\",\"reply\":\"你想说的话\"}，"
-    "reply 里只放自然的朗读正文。静默时输出 {\"action\":\"ignore\"}。";
+#define DSPET_DEEPSEEK_IGNORE_REPLY "[[IGNORE]]"
 
-static esp_err_t copyReply(const char *content, char *reply, size_t capacityBytes) {
-    if (!content || strspn(content, " \t\r\n") == strlen(content)) {
+static const char kAlwaysListeningPrompt[] =
+    "当前是免唤醒闲聊。最后一条 user 消息是麦克风收到的语音转写。"
+    "听到完整的提问、请求、招呼、吐槽或日常随口话，就像坐在旁边的熟人一样接一句。"
+    "无需喊名字，没听出对方在跟谁说也可以接话。随口话用短回应。"
+    "如果是明确的私人备忘、能认出的媒体台词、没有可接内容的噪声，"
+    "或者只有应声和一句明显没说完的断句，单独输出 " DSPET_DEEPSEEK_IGNORE_REPLY "，不加标点。"
+    "例如「我明白啦，刚才那个画面……」意思没讲完，输出 " DSPET_DEEPSEEK_IGNORE_REPLY "。"
+    "其他时候直接输出角色要说的话。";
+
+static esp_err_t copyReply(const char *content, bool allowIgnore, char *reply, size_t capacityBytes) {
+    static const char kWhitespace[] = " \t\r\n";
+    if (!content) {
         return ESP_ERR_INVALID_RESPONSE;
     }
-    const size_t count = strlen(content) + 1;
-    if (count > capacityBytes) {
+    const size_t leading = strspn(content, kWhitespace);
+    const size_t length  = strlen(content);
+    if (leading == length) {
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    const size_t markerBytes = sizeof(DSPET_DEEPSEEK_IGNORE_REPLY) - 1;
+    if (allowIgnore && strncmp(content + leading, DSPET_DEEPSEEK_IGNORE_REPLY, markerBytes) == 0) {
+        const char *tail = content + leading + markerBytes;
+        if (!tail[strspn(tail, kWhitespace)]) {
+            return ESP_ERR_NOT_FOUND;
+        }
+    }
+    if (length >= capacityBytes) {
         return ESP_ERR_INVALID_SIZE;
     }
-    memcpy(reply, content, count);
+    memcpy(reply, content, length + 1);
     return ESP_OK;
 }
 
-static esp_err_t parseAddressedReply(const char *content, char *reply, size_t capacityBytes) {
-    cJSON      *decision = cJSON_ParseWithOpts(content, NULL, true);
-    const char *action   = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(decision, "action"));
-    esp_err_t   error    = ESP_ERR_INVALID_RESPONSE;
-    if (action && strcmp(action, "reply") == 0) {
-        error =
-            copyReply(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(decision, "reply")), reply, capacityBytes);
-    } else if (action && strcmp(action, "ignore") == 0) {
-        error = ESP_ERR_NOT_FOUND;
-    }
-    cJSON_Delete(decision);
-    return error;
-}
-
-static esp_err_t parseReply(JsonResponse *response, bool addressedOnly, char *reply, size_t capacityBytes) {
+static esp_err_t parseReply(JsonResponse *response, bool allowIgnore, char *reply, size_t capacityBytes) {
     response->data[response->size] = '\0';
     cJSON      *data               = cJSON_ParseWithLength(response->data, response->size + 1);
     cJSON      *choices            = cJSON_GetObjectItemCaseSensitive(data, "choices");
@@ -294,9 +294,8 @@ static esp_err_t parseReply(JsonResponse *response, bool addressedOnly, char *re
     cJSON      *message            = cJSON_GetObjectItemCaseSensitive(choice, "message");
     const char *content            = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(message, "content"));
     esp_err_t   error              = ESP_ERR_INVALID_RESPONSE;
-    if (finished && strcmp(finished, "stop") == 0 && content) {
-        error = addressedOnly ? parseAddressedReply(content, reply, capacityBytes)
-                              : copyReply(content, reply, capacityBytes);
+    if (finished && strcmp(finished, "stop") == 0) {
+        error = copyReply(content, allowIgnore, reply, capacityBytes);
     }
     cJSON_Delete(data);
     return error;
@@ -355,35 +354,17 @@ esp_err_t DSPetDeepSeekTranscribe(const char                *key,
     return error;
 }
 
-static bool addHistory(cJSON *messages, const DSPetDeepSeekHistory *history, bool addressedOnly) {
-    if (!history) {
-        return true;
-    }
-    const char *reply           = history->reply;
-    char       *structuredReply = NULL;
-    if (addressedOnly) {
-        // 保持历史 assistant 消息与当前回合的 JSON 输出格式一致。
-        cJSON *decision = cJSON_CreateObject();
-        if (cJSON_AddStringToObject(decision, "action", "reply") && cJSON_AddStringToObject(decision, "reply", reply)) {
-            structuredReply = cJSON_PrintUnformatted(decision);
-        }
-        cJSON_Delete(decision);
-        if (!structuredReply) {
-            return false;
-        }
-        reply = structuredReply;
-    }
-    const bool added = addMessage(messages, "user", history->question) && addMessage(messages, "assistant", reply) &&
-                       (!history->interrupted ||
-                        addMessage(messages, "system", "上一条回复的播报被打断或中途停止，用户可能只听到部分内容。"));
-    cJSON_free(structuredReply);
-    return added;
+static bool addHistory(cJSON *messages, const DSPetDeepSeekHistory *history) {
+    return !history ||
+           (addMessage(messages, "user", history->question) && addMessage(messages, "assistant", history->reply) &&
+            (!history->interrupted ||
+             addMessage(messages, "system", "上一条回复的播报被打断或中途停止，用户可能只听到部分内容。")));
 }
 
 esp_err_t DSPetDeepSeekReply(const char                 *key,
                              const char                 *question,
                              const DSPetDeepSeekHistory *history,
-                             bool                        addressedOnly,
+                             bool                        allowIgnore,
                              char                       *reply,
                              size_t                      capacityBytes,
                              const DSPetDeepSeekCancel  *cancel) {
@@ -397,16 +378,14 @@ esp_err_t DSPetDeepSeekReply(const char                 *key,
     if (messages && cJSON_AddStringToObject(body, "model", "deepseek-flash") &&
         cJSON_AddStringToObject(body, "reasoning_effort", "low") && cJSON_AddNumberToObject(body, "max_tokens", 512) &&
         addMessage(messages, "system", kSystemPrompt) &&
-        (!addressedOnly ||
-         (cJSON_AddStringToObject(cJSON_AddObjectToObject(body, "response_format"), "type", "json_object") &&
-          addMessage(messages, "system", kAddressingPrompt))) &&
-        addHistory(messages, history, addressedOnly) && addMessage(messages, "user", question)) {
+        (!allowIgnore || addMessage(messages, "system", kAlwaysListeningPrompt)) && addHistory(messages, history) &&
+        addMessage(messages, "user", question)) {
         response.data = heap_caps_malloc(kReplyJsonBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (response.data) {
             error = postJson(
                 key, "https://api.deepseek.com/chat/completions", "chat", body, false, appendJson, &response, cancel);
             if (error == ESP_OK) {
-                error = parseReply(&response, addressedOnly, reply, capacityBytes);
+                error = parseReply(&response, allowIgnore, reply, capacityBytes);
             }
         }
     }
