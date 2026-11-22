@@ -15,6 +15,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+#include "sdkconfig.h"
+#ifdef CONFIG_DSPET_AEC
+#include "DSPetAecTest.h"
+#endif
 
 typedef enum {
     kTestRunning,
@@ -34,6 +38,9 @@ typedef struct {
 static const TestCase kCases[] = {
     {"hardware", "duplex", "audio_duplex", DSPetDuplexTestRun, false},
     {"hardware", "alignment", "audio_alignment", DSPetAlignmentTestRun, false},
+#ifdef CONFIG_DSPET_AEC
+    {"hardware", "aec", "audio_aec", DSPetAecTestRun, false},
+#endif
     {"human", "loopback", "audio_loopback", DSPetLoopbackTestRun, true},
 };
 
