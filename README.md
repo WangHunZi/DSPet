@@ -247,3 +247,17 @@ python3 tests/hardware/verify_direct_voice.py --port /dev/cu.usbmodem1101 direct
 ```
 
 直连用例通过隐藏输入取得 Wi-Fi 口令和 DeepSeek Key，串口日志只显示阶段结果。Wi-Fi 使用 RAM 配置，释放测试资源时擦除凭据。串口同时提供当前时间供板端校验证书有效期。测试先暂时关闭本地语音，收完整段合成音频后重采样播放，结束后恢复原来的唤醒模式。`direct` 可加 `--short` 验证一字回复。串口报告 Wi-Fi 信道、TLS 握手、内部堆、HTTP 状态及首批 PCM 排入 I²S 的耗时。
+
+### 直连语音会话
+
+同一测试固件还可以启用直连会话。下面先用板载已有音频经过真实 ASR、对话、流式合成和喇叭播放。加 `--keep-enabled` 后固件继续保持直连，供后续真人用例使用。
+
+```sh
+python3 tests/hardware/verify_direct_conversation.py --port /dev/cu.usbmodem1101 \
+  --ssid 实际SSID --keep-enabled --exercise-cancel
+python3 tests/human/verify_direct_conversation_human.py --port /dev/cu.usbmodem1101
+```
+
+`--exercise-cancel` 在自动播报中再次提交板载 PCM，验证旧流关闭、DMA 排空和新回合的识别。真人用例先说「你好小智」，接着请桌宠讲个故事。听到开始播报后等两三秒，再直接说「等一下，一加一等于几」。听桌宠回答后保持安静。串口记录 ASR 文本、首块播放、插话前后的回合编号和旧音频排空。
+
+录音和回声参考保持 16 kHz。ASR 上传副本转成 8 kHz，TTS 音频分块转换成 16 kHz。网络任务和播放任务通过有界 PCM 缓冲交接，缓冲耗尽时先补一段再续播。关闭直连用 `dspet voice disable`，再用 `dspet voice enable` 回到本地唤醒模式。重启后临时凭据需重新配置。
