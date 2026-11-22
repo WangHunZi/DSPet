@@ -1,6 +1,7 @@
 #ifndef DSPET_DIRECT_TEST_H
 #define DSPET_DIRECT_TEST_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "esp_err.h"
@@ -11,10 +12,12 @@
  * @param[in] password Wi-Fi 口令。扫描时传 NULL。
  * @param[in] key DeepSeek 密钥。扫描时传 NULL。
  * @param[in] unixTime 由本机串口提供的 UTC 秒数，扫描时传 0。
+ * @param[in] shortReply 使用最短的一字回复，用于区分小包和持续传输。
  * @return ESP_OK 表示已准备，其余为参数错误。
  * @note 串口任务在测试空闲时调用，测试结束后擦除配置。
  */
-esp_err_t DSPetDirectTestPrepare(const char *ssid, const char *password, const char *key, uint32_t unixTime);
+esp_err_t
+DSPetDirectTestPrepare(const char *ssid, const char *password, const char *key, uint32_t unixTime, bool shortReply);
 
 /** @brief 擦除本轮临时网络配置。 */
 void DSPetDirectTestClear(void);

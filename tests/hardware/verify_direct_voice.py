@@ -59,8 +59,10 @@ def send_credentials(board, command, password, key):
     return started.group(1)
 
 
-def run_direct(board, ssid, password, key):
+def run_direct(board, ssid, password, key, short_reply):
     command = f"dspet test hardware network direct {json.dumps(ssid, ensure_ascii=False)} {int(time.time())}"
+    if short_reply:
+        command += " short"
     restore = voice_mode(board) == "on"
     if restore:
         board.command("dspet voice disable")
@@ -83,6 +85,7 @@ def main():
     scan.add_argument("prefix")
     direct = actions.add_parser("direct", help="隐藏输入凭据并触发固定问题的直连播放")
     direct.add_argument("ssid")
+    direct.add_argument("--short", action="store_true", help="用一字回复排查音频长连接")
     args = parser.parse_args()
     if args.mode == "scan":
         with Board(args.port) as board:
@@ -97,7 +100,7 @@ def main():
     if any(ord(char) < 32 or ord(char) == 127 for char in password + key):
         parser.error("凭据包含控制字符。")
     with Board(args.port) as board:
-        return 0 if run_direct(board, args.ssid, password, key) else 1
+        return 0 if run_direct(board, args.ssid, password, key, args.short) else 1
 
 
 if __name__ == "__main__":

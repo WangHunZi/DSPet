@@ -154,7 +154,7 @@ void DSPetConsoleTestsHelp(void) {
     puts("dspet test confirm <run-id> pass|fail");
 #ifdef CONFIG_DSPET_DIRECT_TEST
     puts("dspet test hardware network scan <SSID-prefix>");
-    puts("dspet test hardware network direct <SSID> <unix-time>");
+    puts("dspet test hardware network direct <SSID> <unix-time> [short]");
 #endif
 }
 
@@ -221,7 +221,7 @@ static bool readSecret(const char *field, char *value, size_t capacity) {
     return false;
 }
 
-static int prepareNetwork(const TestCase *test, const char *ssid, uint32_t unixTime) {
+static int prepareNetwork(const TestCase *test, const char *ssid, uint32_t unixTime, bool shortReply) {
     if (!testAvailable(test)) {
         return 1;
     }
@@ -232,12 +232,12 @@ static int prepareNetwork(const TestCase *test, const char *ssid, uint32_t unixT
     }
     esp_err_t error = ESP_ERR_INVALID_ARG;
     if (test == &kWifiScan) {
-        error = DSPetDirectTestPrepare(ssid, NULL, NULL, 0);
+        error = DSPetDirectTestPrepare(ssid, NULL, NULL, 0, false);
     } else {
         char password[kDSPetWifiPasswordBytes + 1];
         char key[kDSPetDeepSeekKeyBytes + 1];
         if (readSecret("wifi_password", password, sizeof(password)) && readSecret("deepseek_key", key, sizeof(key))) {
-            error = DSPetDirectTestPrepare(ssid, password, key, unixTime);
+            error = DSPetDirectTestPrepare(ssid, password, key, unixTime, shortReply);
         }
         mbedtls_platform_zeroize(password, sizeof(password));
         mbedtls_platform_zeroize(key, sizeof(key));
@@ -278,9 +278,10 @@ int DSPetConsoleTestsRunCommand(int argc, char **argv) {
 #ifdef CONFIG_DSPET_DIRECT_TEST
     if (argc >= 4 && strcmp(argv[0], "hardware") == 0 && strcmp(argv[1], "network") == 0) {
         if (argc == 4 && strcmp(argv[2], "scan") == 0) {
-            return prepareNetwork(&kWifiScan, argv[3], 0);
+            return prepareNetwork(&kWifiScan, argv[3], 0, false);
         }
-        if (argc == 5 && strcmp(argv[2], "direct") == 0) {
+        const bool shortReply = argc == 6 && strcmp(argv[5], "short") == 0;
+        if ((argc == 5 || shortReply) && strcmp(argv[2], "direct") == 0) {
             char *end;
             errno                    = 0;
             const uintmax_t unixTime = strtoumax(argv[4], &end, 10);
@@ -288,7 +289,7 @@ int DSPetConsoleTestsRunCommand(int argc, char **argv) {
                 puts("DSPET_ERROR invalid_unix_time");
                 return 1;
             }
-            return prepareNetwork(&kDirectTest, argv[3], (uint32_t) unixTime);
+            return prepareNetwork(&kDirectTest, argv[3], (uint32_t) unixTime, shortReply);
         }
     }
 #endif

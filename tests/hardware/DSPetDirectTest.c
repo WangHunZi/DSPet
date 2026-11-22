@@ -3,6 +3,7 @@
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
 
@@ -14,16 +15,23 @@
 #include "esp_timer.h"
 #include "mbedtls/platform_util.h"
 
-enum { kWriteTimeoutMs = 40, kDrainTimeoutMs = 120, kSpeakerAttenuation = 10 };
+enum {
+    kWriteTimeoutMs     = 40,
+    kDrainTimeoutMs     = 120,
+    kSpeakerAttenuation = 10,
+    kReplySamples       = 20 * kDSPetAudioDeviceSampleRateHz
+};
 
 static struct {
     char     ssid[kDSPetWifiSsidBytes + 1];
     char     password[kDSPetWifiPasswordBytes + 1];
     char     key[kDSPetDeepSeekKeyBytes + 1];
     uint32_t unixTime;
+    bool     shortReply;
 } sSettings;
 
-esp_err_t DSPetDirectTestPrepare(const char *ssid, const char *password, const char *key, uint32_t unixTime) {
+esp_err_t
+DSPetDirectTestPrepare(const char *ssid, const char *password, const char *key, uint32_t unixTime, bool shortReply) {
     const size_t ssidBytes     = strlen(ssid);
     const size_t passwordBytes = password ? strlen(password) : 0;
     const size_t keyBytes      = key ? strlen(key) : 0;
@@ -33,7 +41,8 @@ esp_err_t DSPetDirectTestPrepare(const char *ssid, const char *password, const c
         return ESP_ERR_INVALID_ARG;
     }
     DSPetDirectTestClear();
-    sSettings.unixTime = unixTime;
+    sSettings.unixTime   = unixTime;
+    sSettings.shortReply = shortReply;
     memcpy(sSettings.ssid, ssid, ssidBytes);
     if (password) {
         memcpy(sSettings.password, password, passwordBytes);
@@ -71,26 +80,12 @@ typedef struct {
     DSPetPcm24kTo16k converter;
     bool             haveLowByte;
     uint8_t          lowByte;
-    int16_t          output[kDSPetAudioDeviceBlockSamples];
-    size_t           used;
-    size_t           writtenSamples;
-    int64_t          roundStartedUs;
-} AudioOutput;
-
-static esp_err_t playBlock(AudioOutput *output) {
-    esp_err_t error = DSPetAudioDeviceWrite(output->output, output->used, kWriteTimeoutMs);
-    if (error == ESP_OK) {
-        if (!output->writtenSamples) {
-            printf("DSPET_DIRECT_FIRST_PCM round_us=%" PRId64 "\n", esp_timer_get_time() - output->roundStartedUs);
-        }
-        output->writtenSamples += output->used;
-        output->used = 0;
-    }
-    return error;
-}
+    int16_t         *pcm;
+    size_t           samples;
+} AudioPreview;
 
 static esp_err_t consumePcm(const uint8_t *bytes, size_t count, void *context) {
-    AudioOutput *output = context;
+    AudioPreview *output = context;
     for (size_t i = 0; i < count; ++i) {
         if (!output->haveLowByte) {
             output->lowByte     = bytes[i];
@@ -101,34 +96,36 @@ static esp_err_t consumePcm(const uint8_t *bytes, size_t count, void *context) {
         output->haveLowByte  = false;
         int16_t      pair[2];
         const size_t available = DSPetPcm24kTo16kPush(&output->converter, sample, pair);
-        for (size_t index = 0; index < available; ++index) {
-            output->output[output->used++] = pair[index] / kSpeakerAttenuation;
+        if (available > kReplySamples - output->samples) {
+            return ESP_ERR_INVALID_SIZE;
         }
-        if (output->used == kDSPetAudioDeviceBlockSamples) {
-            esp_err_t error = playBlock(output);
-            if (error != ESP_OK) {
-                return error;
-            }
+        for (size_t index = 0; index < available; ++index) {
+            output->pcm[output->samples++] = pair[index] / kSpeakerAttenuation;
         }
     }
     return ESP_OK;
 }
 
-static esp_err_t playReply(const char *reply, int64_t startedUs) {
-    AudioOutput output = {.roundStartedUs = startedUs};
-    esp_err_t   error  = DSPetAudioDeviceOpen();
+static esp_err_t playPcm(const AudioPreview *audio, int64_t startedUs) {
+    esp_err_t error = DSPetAudioDeviceOpen();
     if (error != ESP_OK) {
         return error;
     }
-    printHeap("before_tts");
-    error = DSPetDeepSeekSpeak(sSettings.key, reply, consumePcm, &output);
-    if (error == ESP_OK && (output.haveLowByte || (!output.writtenSamples && !output.used))) {
-        error = ESP_ERR_INVALID_RESPONSE;
+    size_t writtenSamples = 0;
+    while (error == ESP_OK && writtenSamples < audio->samples) {
+        size_t count = audio->samples - writtenSamples;
+        if (count > kDSPetAudioDeviceBlockSamples) {
+            count = kDSPetAudioDeviceBlockSamples;
+        }
+        error = DSPetAudioDeviceWrite(audio->pcm + writtenSamples, count, kWriteTimeoutMs);
+        if (error == ESP_OK) {
+            if (!writtenSamples) {
+                printf("DSPET_DIRECT_FIRST_PCM round_us=%" PRId64 "\n", esp_timer_get_time() - startedUs);
+            }
+            writtenSamples += count;
+        }
     }
-    if (error == ESP_OK && output.used) {
-        error = playBlock(&output);
-    }
-    if (output.writtenSamples) {
+    if (writtenSamples) {
         esp_err_t drained = DSPetAudioDeviceDrain(kDrainTimeoutMs);
         if (error == ESP_OK) {
             error = drained;
@@ -137,9 +134,26 @@ static esp_err_t playReply(const char *reply, int64_t startedUs) {
     esp_err_t closed = DSPetAudioDeviceClose();
     printf("DSPET_DIRECT_PLAY drained=%u samples=%zu total_us=%" PRId64 "\n",
            error == ESP_OK ? 1u : 0u,
-           output.writtenSamples,
+           writtenSamples,
            esp_timer_get_time() - startedUs);
     return error == ESP_OK ? closed : error;
+}
+
+static esp_err_t playReply(const char *reply, int64_t startedUs) {
+    AudioPreview audio = {
+        .pcm = heap_caps_malloc(kReplySamples * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT),
+    };
+    if (!audio.pcm) {
+        return ESP_ERR_NO_MEM;
+    }
+    printHeap("before_tts");
+    // 固定问题用例先收完整音频，再开 I²S，以单独验证网络与喇叭。
+    esp_err_t error = DSPetDeepSeekSpeak(sSettings.key, reply, consumePcm, &audio);
+    if (error == ESP_OK) {
+        error = audio.haveLowByte || !audio.samples ? ESP_ERR_INVALID_RESPONSE : playPcm(&audio, startedUs);
+    }
+    free(audio.pcm);
+    return error;
 }
 
 esp_err_t DSPetDirectTestRun(void) {
@@ -161,7 +175,9 @@ esp_err_t DSPetDirectTestRun(void) {
     const int64_t startedUs = esp_timer_get_time();
     char          reply[1024];
     if (error == ESP_OK) {
-        error = DSPetDeepSeekReply(sSettings.key, "海水为什么是咸的？用一句话回答。", reply, sizeof(reply));
+        const char *question =
+            sSettings.shortReply ? "一加一等于几？只回答一个汉字。" : "海水为什么是咸的？用一句话回答。";
+        error = DSPetDeepSeekReply(sSettings.key, question, reply, sizeof(reply));
     }
     if (error == ESP_OK) {
         printf("DSPET_DIRECT_REPLY %s\n", reply);
