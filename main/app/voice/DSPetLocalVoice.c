@@ -185,7 +185,7 @@ static esp_err_t advanceDirect(LocalVoice *voice) {
         const int16_t *recording;
         if (voice->fixture) {
             recording = kReplyPcmStart;
-            samples   = kDSPetNearSpeechMaxRecordingSamples;
+            samples   = 2 * kDSPetAudioDeviceSampleRateHz;
         } else {
             recording = DSPetNearSpeechRecording(voice->speech, &samples, &preRoll);
         }

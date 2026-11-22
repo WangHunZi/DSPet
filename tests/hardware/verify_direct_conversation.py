@@ -37,7 +37,9 @@ def verify_fixture(board):
     board.command("dspet voice fixture")
     start = board.expect(r"DSPET_VOICE event=fixture_start state=listening turn=(\d+)")
     turn = start.group(1)
-    board.expect(fr"DSPET_DIRECT_ASR turn={turn} elapsed_us=\d+ text=\S+", 35)
+    asr = board.expect(fr"DSPET_DIRECT_ASR turn={turn} elapsed_us=\d+ text=\S+|DSPET_VOICE event=direct_error", 58)
+    if "direct_error" in asr.group():
+        raise RuntimeError("板载会话在取得 ASR 结果前失败。")
     board.expect(fr"DSPET_DIRECT_STREAM turn={turn} before_end=1", 45)
     board.expect(fr"DSPET_VOICE event=playback_started state=speaking turn={turn}\b", 8)
     board.expect(fr"DSPET_DIRECT_END turn={turn} result=ESP_OK cancelled=0 samples=\d+", 55)

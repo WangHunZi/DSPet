@@ -100,6 +100,7 @@ static esp_err_t postRequest(const char                *key,
                heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
                heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     }
+    size_t written = 0;
     for (size_t i = 0; error == ESP_OK && i < request->partCount; ++i) {
         const RequestPart *part = &request->parts[i];
         for (size_t sent = 0; sent < part->bytes;) {
@@ -112,8 +113,8 @@ static esp_err_t postRequest(const char                *key,
                 break;
             }
             size_t bytes = part->bytes - sent;
-            if (bytes > 2048) {
-                bytes = 2048;
+            if (bytes > 4096) {
+                bytes = 4096;
             }
             int count = esp_http_client_write(http, (const char *) part->data + sent, bytes);
             if (count <= 0) {
@@ -121,12 +122,15 @@ static esp_err_t postRequest(const char                *key,
                 break;
             }
             sent += (size_t) count;
+            written += (size_t) count;
         }
     }
-    if (error == ESP_OK && request->partCount > 1) {
-        printf("DSPET_DIRECT_UPLOAD stage=%s bytes=%zu elapsed_us=%" PRId64 "\n",
+    if (request->partCount > 1) {
+        printf("DSPET_DIRECT_UPLOAD stage=%s bytes=%zu total=%zu result=%s elapsed_us=%" PRId64 "\n",
                stage,
+               written,
                uploadBytes,
+               esp_err_to_name(error),
                esp_timer_get_time() - startedUs);
     }
     if (error == ESP_OK && esp_http_client_fetch_headers(http) < 0) {
@@ -253,10 +257,12 @@ static esp_err_t parseReply(JsonResponse *response, char *reply, size_t capacity
 esp_err_t DSPetDeepSeekTranscribe(const char                *key,
                                   const int16_t             *samples,
                                   size_t                     sampleCount,
+                                  uint32_t                   sampleRateHz,
                                   char                      *transcript,
                                   size_t                     capacityBytes,
                                   const DSPetDeepSeekCancel *cancel) {
-    if (!sampleCount || sampleCount > (8 * 1024 * 1024 - kDSPetPcmWavHeaderBytes) / sizeof(*samples)) {
+    if ((sampleRateHz != 8000 && sampleRateHz != 16000) || !sampleCount ||
+        sampleCount > (8 * 1024 * 1024 - kDSPetPcmWavHeaderBytes) / sizeof(*samples)) {
         return ESP_ERR_INVALID_SIZE;
     }
     static const char lead[] = "--dspet-pcm16-wav-esp32-s3\r\n"
@@ -264,7 +270,7 @@ esp_err_t DSPetDeepSeekTranscribe(const char                *key,
                                "Content-Type: audio/wav\r\n\r\n";
     static const char tail[] = "\r\n--dspet-pcm16-wav-esp32-s3--\r\n";
     uint8_t           wav[kDSPetPcmWavHeaderBytes];
-    DSPetPcmWavHeader(wav, 16000, sampleCount);
+    DSPetPcmWavHeader(wav, sampleRateHz, sampleCount);
     const RequestPart parts[] = {
         {lead, sizeof(lead) - 1},
         {wav, sizeof(wav)},

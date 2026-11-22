@@ -102,8 +102,18 @@ static esp_err_t runTurn(DSPetDirectVoice *voice) {
     if (!DSPetPcmReplayNormalize(buffer->recording, voice->samples, &level)) {
         return ESP_ERR_NOT_FOUND;
     }
-    esp_err_t error = DSPetDeepSeekTranscribe(
-        voice->settings.key, buffer->recording, voice->samples, buffer->question, sizeof(buffer->question), &cancel);
+    // 上传的副本转为 ASR 支持的 8 kHz，用相邻两点平均抑制混叠。
+    const size_t uploadSamples = voice->samples / 2;
+    for (size_t i = 0; i < uploadSamples; ++i) {
+        buffer->recording[i] = (int16_t) (((int32_t) buffer->recording[2 * i] + buffer->recording[2 * i + 1]) / 2);
+    }
+    esp_err_t error = DSPetDeepSeekTranscribe(voice->settings.key,
+                                              buffer->recording,
+                                              uploadSamples,
+                                              8000,
+                                              buffer->question,
+                                              sizeof(buffer->question),
+                                              &cancel);
     if (error != ESP_OK) {
         return error;
     }

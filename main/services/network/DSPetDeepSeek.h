@@ -32,10 +32,11 @@ typedef struct {
 typedef esp_err_t (*DSPetDeepSeekAudioSink)(const uint8_t *bytes, size_t count, void *context);
 
 /**
- * @brief 将 16 kHz 单声道 PCM16 录音封装为 WAV 交给 DeepSeek ASR。
+ * @brief 将单声道 PCM16 录音封装为 WAV 交给 DeepSeek ASR。
  * @param[in] key 调用期间借用的 DeepSeek 凭据。
  * @param[in] samples 非空录音缓冲，调用返回前有效。
  * @param[in] sampleCount 录音样本数。
+ * @param[in] sampleRateHz 录音采样率，为 8000 或 16000。
  * @param[out] transcript 以 NUL 结尾的 UTF-8 转写。
  * @param[in] capacityBytes 转写缓冲字节数。
  * @param[in] cancel 可空的取消标记。
@@ -44,6 +45,7 @@ typedef esp_err_t (*DSPetDeepSeekAudioSink)(const uint8_t *bytes, size_t count, 
 esp_err_t DSPetDeepSeekTranscribe(const char                *key,
                                   const int16_t             *samples,
                                   size_t                     sampleCount,
+                                  uint32_t                   sampleRateHz,
                                   char                      *transcript,
                                   size_t                     capacityBytes,
                                   const DSPetDeepSeekCancel *cancel);
