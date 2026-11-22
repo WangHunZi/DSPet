@@ -37,7 +37,7 @@ def verify_fixture(board):
     board.command("dspet voice fixture")
     start = board.expect(r"DSPET_VOICE event=fixture_start state=listening turn=(\d+)")
     turn = start.group(1)
-    asr = board.expect(fr"DSPET_DIRECT_ASR turn={turn} elapsed_us=\d+ text=\S+|DSPET_VOICE event=direct_error", 58)
+    asr = board.expect(fr"DSPET_DIRECT_ASR turn={turn} elapsed_us=\d+ text=\S+|DSPET_VOICE event=direct_error", 80)
     if "direct_error" in asr.group():
         raise RuntimeError("板载会话在取得 ASR 结果前失败。")
     board.expect(fr"DSPET_DIRECT_STREAM turn={turn} before_end=1", 45)
@@ -53,6 +53,9 @@ def verify_fixture(board):
 def verify_fixture_barge_in(board):
     board.command("dspet voice fixture")
     first = board.expect(r"DSPET_VOICE event=fixture_start state=listening turn=(\d+)").group(1)
+    asr = board.expect(fr"DSPET_DIRECT_ASR turn={first} elapsed_us=\d+ text=\S+|DSPET_VOICE event=direct_error", 80)
+    if "direct_error" in asr.group():
+        raise RuntimeError("受控插话前的 ASR 请求失败。")
     board.expect(fr"DSPET_VOICE event=playback_started state=speaking turn={first}\b", 75)
     board.command("dspet voice fixture")
     second = board.expect(r"DSPET_VOICE event=barge_in state=listening turn=(\d+)", 3).group(1)
@@ -64,7 +67,7 @@ def verify_fixture_barge_in(board):
         )
         evidence.add(event.group().split()[0])
     assert len(evidence) == 2
-    asr = board.expect(fr"DSPET_DIRECT_ASR turn={second} elapsed_us=\d+ text=\S+|DSPET_VOICE event=direct_error", 58)
+    asr = board.expect(fr"DSPET_DIRECT_ASR turn={second} elapsed_us=\d+ text=\S+|DSPET_VOICE event=direct_error", 80)
     if "direct_error" in asr.group():
         raise RuntimeError("旧回合已排空和关闭，下一轮 ASR 请求失败。")
     board.expect(fr"DSPET_VOICE event=playback_started state=speaking turn={second}\b", 50)

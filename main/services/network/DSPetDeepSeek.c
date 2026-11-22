@@ -16,11 +16,12 @@
 #include "mbedtls/platform_util.h"
 
 enum {
-    kHttpTimeoutMs   = 12000,
-    kUploadTimeoutMs = 35000,
-    kReadPollMs      = 250,
-    kReplyJsonBytes  = 24576,
-    kReadBlockBytes  = 768
+    kHttpTimeoutMs      = 12000,
+    kUploadTimeoutMs    = 35000,
+    kAsrHeaderTimeoutMs = 24000,
+    kReadPollMs         = 250,
+    kReplyJsonBytes     = 24576,
+    kReadBlockBytes     = 768
 };
 extern const char kSystemPrompt[] asm("_binary_system_prompt_txt_start");
 
@@ -53,11 +54,11 @@ typedef struct {
 
 static bool cancelled(const DSPetDeepSeekCancel *cancel) { return cancel && cancel->requested(cancel->context); }
 
-static esp_err_t postRequest(const char                *key,
-                             const Request             *request,
-                             DSPetDeepSeekAudioSink     sink,
-                             void                      *context,
-                             const DSPetDeepSeekCancel *cancel) {
+static esp_err_t postRequestOnce(const char                *key,
+                                 const Request             *request,
+                                 DSPetDeepSeekAudioSink     sink,
+                                 void                      *context,
+                                 const DSPetDeepSeekCancel *cancel) {
     if (cancelled(cancel)) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -133,6 +134,9 @@ static esp_err_t postRequest(const char                *key,
                esp_err_to_name(error),
                esp_timer_get_time() - startedUs);
     }
+    if (error == ESP_OK && request->partCount > 1) {
+        error = esp_http_client_set_timeout_ms(http, kAsrHeaderTimeoutMs);
+    }
     if (error == ESP_OK && esp_http_client_fetch_headers(http) < 0) {
         error = ESP_ERR_INVALID_RESPONSE;
     }
@@ -182,6 +186,20 @@ static esp_err_t postRequest(const char                *key,
            esp_err_to_name(error),
            esp_timer_get_time() - startedUs);
     esp_http_client_cleanup(http);
+    return error;
+}
+
+static esp_err_t postRequest(const char                *key,
+                             const Request             *request,
+                             DSPetDeepSeekAudioSink     sink,
+                             void                      *context,
+                             const DSPetDeepSeekCancel *cancel) {
+    esp_err_t error = postRequestOnce(key, request, sink, context, cancel);
+    if (cancel && error == ESP_ERR_HTTP_CONNECT && !cancelled(cancel)) {
+        // 连接尚未打开，尚未写入音频或文本；弱链路下仅尝试重建一次。
+        printf("DSPET_DIRECT_RETRY stage=%s phase=connect\n", request->stage);
+        error = postRequestOnce(key, request, sink, context, cancel);
+    }
     return error;
 }
 

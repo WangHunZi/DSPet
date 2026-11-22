@@ -9,7 +9,7 @@ from verify_local_voice import Board
 
 
 def expect_asr(board, turn):
-    result = board.expect(fr"DSPET_DIRECT_ASR turn={turn} elapsed_us=\d+ text=\S+|DSPET_VOICE event=direct_error", 58)
+    result = board.expect(fr"DSPET_DIRECT_ASR turn={turn} elapsed_us=\d+ text=\S+|DSPET_VOICE event=direct_error", 80)
     if "direct_error" in result.group():
         raise RuntimeError("板载网络回合在 ASR 阶段失败。")
 
