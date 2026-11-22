@@ -200,3 +200,30 @@ AEC 用例播放固定语音，请在测试期间保持安静。它先测底噪�
 python3 tests/hardware/verify_local_voice.py --port /dev/cu.usbmodem1101
 python3 tests/human/verify_local_voice_session.py --port /dev/cu.usbmodem1101
 ```
+
+## Mac 语音网关
+
+使用 Python 3.10 或更新版本和 FFmpeg。从仓库根目录运行。角色提示在 [gateway/system_prompt.txt](gateway/system_prompt.txt)，由同一会话中的每轮对话复用。下面把两段 WAV 依次送入同一会话，终端显示转写、回复和耗时，每轮输出一个可播放的 WAV。
+
+```sh
+python3 -m gateway --ask-key wav 问题.wav 追问.wav --output-dir .cache/voice-replies
+```
+
+输入 WAV 为 16 kHz、单声道、16 位 PCM。网关使用 DeepSeek 的识别、对话和语音合成，合成音色为 Stella。可通过 `DEEPSEEK_API_KEY` 提供密钥，或用 `--ask-key` 隐藏输入。启动 HTTP 接口时另设设备凭据。
+
+```sh
+export DSPET_DEVICE_TOKEN="$(openssl rand -hex 24)"
+python3 -m gateway --ask-key serve
+```
+
+HTTP 默认监听 `127.0.0.1:8765`。板端联网联调时可通过 `--bind` 指定 Mac 的局域网地址。请求使用 `Authorization: Bearer <设备凭据>`。
+
+| 请求 | 输入和结果 |
+| --- | --- |
+| `GET /health` | 返回网关进程状态。 |
+| `POST /v1/turns` | `X-Session-Id` 在一次唤醒内保持相同，`X-Turn-Id` 为递增的正整数。请求体用 `Content-Length` 提交最多 15 秒的 16 kHz 单声道 PCM16LE，类型为 `application/octet-stream`。成功响应分块返回同格式 PCM，并回传 `X-Turn-Id`、`X-PCM-Rate`。 |
+| `DELETE /v1/turns/<回合编号>` | 带上 `X-Session-Id`。取消正在生成或传输的回合，或把已生成的回复标记为中断。设备应先本地停播，并在提交下一轮前发出取消。 |
+
+音频开始前的失败以 JSON 返回 `error.code` 和 `error.message`。音频开始后的失败会关闭连接，完整响应有 HTTP 分块结束标记。已取消的回合及迟到数据通过回合编号识别。会话历史存在网关内存中，同一会话保留最近六轮；网关日志只记录回合编号、耗时、字节数和错误码。
+
+运行 `python3 -m unittest discover -s tests/software -p test_gateway.py` 可用模拟上游复测。测试覆盖会话历史、异常返回、收到首块后取消，以及取消旧回合后继续对话。
