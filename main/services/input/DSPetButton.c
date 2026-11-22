@@ -2,56 +2,73 @@
 
 #include <stdatomic.h>
 
-#include "DSPetBootPin.h"
-#include "DSPetButtonFilter.h"
-#include "esp_check.h"
-#include "esp_timer.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
-#include "freertos/task.h"
+#include "button_gpio.h"
+#include "driver/gpio.h"
+#include "iot_button.h"
 
-static QueueHandle_t     sPresses;
-static atomic_bool       sLongPress;
-static const char *const kTag = "button";
+enum { kBootPin = GPIO_NUM_0, kShortLimitMs = 1000, kLongPressMs = 5000 };
 
-static void pollButton(void *context) {
-    QueueHandle_t     queue = context;
-    DSPetButtonFilter filter;
-    DSPetButtonFilterInit(&filter, DSPetBootPinIsPressed(), (uint32_t) (esp_timer_get_time() / 1000));
-    uint32_t   count    = 0;
-    TickType_t lastWake = xTaskGetTickCount();
-    for (;;) {
-        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(10));
-        bool                   pressed = DSPetBootPinIsPressed();
-        uint32_t               nowMs   = (uint32_t) (esp_timer_get_time() / 1000);
-        const DSPetButtonEvent event   = DSPetButtonFilterUpdate(&filter, pressed, nowMs);
-        if (event == kDSPetButtonLongPress) {
-            atomic_store(&sLongPress, true);
-        } else if (event == kDSPetButtonShortPress) {
-            // 保留最新累计值，应用忙于刷屏时仍能还原按下次数。
-            ++count;
-            xQueueOverwrite(queue, &count);
-        }
+static button_handle_t sButton;
+static atomic_uint     sShortCount;
+static atomic_uint     sLongCount;
+static atomic_bool     sLongPress;
+static atomic_bool     sIgnoreInitial;
+
+static void onRelease(void *button, void *context) {
+    if (!atomic_exchange(&sIgnoreInitial, false) && iot_button_get_pressed_time(button) < kShortLimitMs) {
+        atomic_fetch_add(&sShortCount, 1);
+    }
+}
+
+static void onLongPress(void *button, void *context) {
+    if (!atomic_load(&sIgnoreInitial)) {
+        atomic_fetch_add(&sLongCount, 1);
+        atomic_store(&sLongPress, true);
     }
 }
 
 esp_err_t DSPetButtonStart(void) {
-    if (sPresses) {
+    if (sButton) {
         return ESP_ERR_INVALID_STATE;
     }
-    ESP_RETURN_ON_ERROR(DSPetBootPinInit(), kTag, "init BOOT");
-    QueueHandle_t queue = xQueueCreate(1, sizeof(uint32_t));
-    if (!queue) {
-        return ESP_ERR_NO_MEM;
+    const button_config_t      config = {.long_press_time = kLongPressMs};
+    const button_gpio_config_t gpio   = {.gpio_num = kBootPin, .active_level = 0};
+    esp_err_t                  error  = iot_button_new_gpio_device(&config, &gpio, &sButton);
+    if (error != ESP_OK) {
+        return error;
     }
-    if (xTaskCreate(pollButton, "boot-button", 2048, queue, 3, NULL) != pdPASS) {
-        vQueueDelete(queue);
-        return ESP_ERR_NO_MEM;
+    atomic_store(&sIgnoreInitial, DSPetButtonIsPressed());
+
+    // 每次独立处理按键，避免 SDK 连击窗口把紧接短按的长按当作第二次点击。
+    error = iot_button_set_param(sButton, BUTTON_SHORT_PRESS_TIME_MS, NULL);
+    if (error == ESP_OK) {
+        error = iot_button_register_cb(sButton, BUTTON_PRESS_UP, NULL, onRelease, NULL);
     }
-    sPresses = queue;
-    return ESP_OK;
+    if (error == ESP_OK) {
+        error = iot_button_register_cb(sButton, BUTTON_LONG_PRESS_START, NULL, onLongPress, NULL);
+    }
+    if (error != ESP_OK) {
+        iot_button_delete(sButton);
+        sButton = NULL;
+    }
+    return error;
 }
 
-bool DSPetButtonTakeCount(uint32_t *count) { return sPresses && count && xQueueReceive(sPresses, count, 0) == pdTRUE; }
+bool DSPetButtonTakeCount(uint32_t *count) {
+    static uint32_t consumed;
+    const uint32_t  current = atomic_load(&sShortCount);
+    if (current == consumed) {
+        return false;
+    }
+    consumed = current;
+    *count   = current;
+    return true;
+}
 
 bool DSPetButtonTakeLongPress(void) { return atomic_exchange(&sLongPress, false); }
+
+bool DSPetButtonIsPressed(void) { return gpio_get_level(kBootPin) == 0; }
+
+DSPetButtonCounts DSPetButtonGetCounts(void) {
+    return (DSPetButtonCounts) {.shortPresses = atomic_load(&sShortCount), .longPresses = atomic_load(&sLongCount)};
+}

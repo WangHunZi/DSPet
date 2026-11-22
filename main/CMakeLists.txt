@@ -51,8 +51,8 @@ foreach(name IN LISTS clip_names)
 endforeach()
 idf_component_register(
     SRCS "app_main.c" "app/DSPetActionState.c" "diagnostics/DSPetAudioCheck.c"
-         "hardware/DSPetBootPin.c" "hardware/DSPetPanel.c" "hardware/DSPetAudioDevice.c"
-         "services/input/DSPetButton.c" "services/input/DSPetButtonFilter.c"
+         "hardware/DSPetPanel.c" "hardware/DSPetAudioDevice.c"
+         "services/input/DSPetButton.c"
          "services/animation/DSPetAnimation.c" "services/animation/DSPetIndexedFrame.c"
          "services/audio/DSPetPlayback.c" "services/audio/DSPetPcmReplay.c" "ui/DSPetPetPage.c"
     PRIV_INCLUDE_DIRS "." "app" "hardware" "services/input" "services/animation" "services/audio" "ui" "diagnostics" "console"

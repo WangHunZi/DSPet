@@ -7,7 +7,7 @@
 #include "esp_err.h"
 
 /**
- * @brief 初始化按键并启动采样任务。
+ * @brief 用 Espressif Button 组件初始化 BOOT。
  * @return ESP_OK 表示成功，否则为 GPIO 驱动、资源分配或重复初始化错误。
  */
 esp_err_t DSPetButtonStart(void);
@@ -20,7 +20,19 @@ esp_err_t DSPetButtonStart(void);
  */
 bool DSPetButtonTakeCount(uint32_t *count);
 
-/** @brief 消费一次已完成的长按，挂起的多个长按合并为一次。 */
+/** @brief 消费一次达到长按时长的事件，挂起的多个长按合并为一次。 */
 bool DSPetButtonTakeLongPress(void);
+
+/** @brief 读取 BOOT 的物理电平，按住时返回 true。 */
+bool DSPetButtonIsPressed(void);
+
+/** @brief 供串口检查的按键事件累计数。 */
+typedef struct {
+    uint32_t shortPresses; /**< 小于一秒后松开的次数。 */
+    uint32_t longPresses;  /**< 按住达到五秒的次数。 */
+} DSPetButtonCounts;
+
+/** @brief 读取累计计数，不消费按键事件。 */
+DSPetButtonCounts DSPetButtonGetCounts(void);
 
 #endif

@@ -12,5 +12,6 @@ dependencies:
   espressif/qrcode:
     version: "==0.2.0"
     require: private
-    rules:
-      - if: "$CONFIG{DSPET_PROVISIONING} == True"
+  espressif/button:
+    version: "==4.2.3"
+    require: private
