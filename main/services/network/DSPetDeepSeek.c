@@ -355,11 +355,29 @@ esp_err_t DSPetDeepSeekTranscribe(const char                *key,
     return error;
 }
 
-static bool addHistory(cJSON *messages, const DSPetDeepSeekHistory *history) {
-    return !history ||
-           (addMessage(messages, "user", history->question) && addMessage(messages, "assistant", history->reply) &&
-            (!history->interrupted ||
-             addMessage(messages, "system", "上一条回复的播报被打断或中途停止，用户可能只听到部分内容。")));
+static bool addHistory(cJSON *messages, const DSPetDeepSeekHistory *history, bool addressedOnly) {
+    if (!history) {
+        return true;
+    }
+    const char *reply           = history->reply;
+    char       *structuredReply = NULL;
+    if (addressedOnly) {
+        // 保持历史 assistant 消息与当前回合的 JSON 输出格式一致。
+        cJSON *decision = cJSON_CreateObject();
+        if (cJSON_AddStringToObject(decision, "action", "reply") && cJSON_AddStringToObject(decision, "reply", reply)) {
+            structuredReply = cJSON_PrintUnformatted(decision);
+        }
+        cJSON_Delete(decision);
+        if (!structuredReply) {
+            return false;
+        }
+        reply = structuredReply;
+    }
+    const bool added = addMessage(messages, "user", history->question) && addMessage(messages, "assistant", reply) &&
+                       (!history->interrupted ||
+                        addMessage(messages, "system", "上一条回复的播报被打断或中途停止，用户可能只听到部分内容。"));
+    cJSON_free(structuredReply);
+    return added;
 }
 
 esp_err_t DSPetDeepSeekReply(const char                 *key,
@@ -378,11 +396,11 @@ esp_err_t DSPetDeepSeekReply(const char                 *key,
     esp_err_t    error    = ESP_ERR_NO_MEM;
     if (messages && cJSON_AddStringToObject(body, "model", "deepseek-flash") &&
         cJSON_AddStringToObject(body, "reasoning_effort", "low") && cJSON_AddNumberToObject(body, "max_tokens", 512) &&
-        addMessage(messages, "system", kSystemPrompt) && addHistory(messages, history) &&
+        addMessage(messages, "system", kSystemPrompt) &&
         (!addressedOnly ||
          (cJSON_AddStringToObject(cJSON_AddObjectToObject(body, "response_format"), "type", "json_object") &&
           addMessage(messages, "system", kAddressingPrompt))) &&
-        addMessage(messages, "user", question)) {
+        addHistory(messages, history, addressedOnly) && addMessage(messages, "user", question)) {
         response.data = heap_caps_malloc(kReplyJsonBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (response.data) {
             error = postJson(
