@@ -158,10 +158,17 @@ static esp_err_t runTurn(DSPetDirectVoice *voice) {
 
 static void workerTask(void *context) {
     DSPetDirectVoice *voice = context;
+    uint8_t           discarded[512];
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         if (atomic_load(&voice->stopping)) {
             break;
+        }
+        // 旧播放器已到终态。由网络任务丢弃余样本，避免重置大缓冲时长时间持有临界区。
+        while (xStreamBufferReceive(voice->audio, discarded, sizeof(discarded), 0)) {
+            if (cancelRequested(voice)) {
+                break;
+            }
         }
         voice->result = runTurn(voice);
         printf("DSPET_DIRECT_END turn=%" PRIu32 " result=%s cancelled=%u samples=%zu gaps=%u\n",
@@ -204,7 +211,7 @@ esp_err_t DSPetDirectVoiceCreate(const DSPetDirectSettings *settings, DSPetDirec
         voice->audio = xStreamBufferCreateStatic(
             sizeof(voice->buffers->ring), sizeof(int16_t), voice->buffers->ring, &voice->audioStorage);
         if (!voice->audio ||
-            xTaskCreatePinnedToCore(workerTask, "deepseek", 8192, voice, 2, &voice->worker, 1) != pdPASS) {
+            xTaskCreatePinnedToCore(workerTask, "deepseek", 8192, voice, 2, &voice->worker, 0) != pdPASS) {
             error = ESP_ERR_NO_MEM;
         }
     }
@@ -223,9 +230,6 @@ esp_err_t DSPetDirectVoiceSubmit(
     }
     if (!sampleCount || sampleCount > kDSPetNearSpeechMaxRecordingSamples) {
         return ESP_ERR_INVALID_SIZE;
-    }
-    if (xStreamBufferReset(voice->audio) != pdPASS) {
-        return ESP_ERR_INVALID_STATE;
     }
     if (newSession) {
         voice->buffers->priorReply[0] = '\0';
@@ -258,7 +262,7 @@ DSPetDirectVoiceStatus DSPetDirectVoiceGetStatus(DSPetDirectVoice *voice) {
         .turnId   = voice->turnId,
         .complete = complete,
         .result   = result,
-        .ready    = result == ESP_OK && DSPetPcmBufferCanStart(bytes, kBufferBytes, elapsedMs, complete),
+        .ready    = firstMs && result == ESP_OK && DSPetPcmBufferCanStart(bytes, kBufferBytes, elapsedMs, complete),
     };
 }
 
