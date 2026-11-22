@@ -11,7 +11,7 @@ static const char kNamespace[] = "dspet_setup";
 static const char kRecordKey[] = "credentials";
 
 typedef struct {
-    uint8_t version;
+    uint8_t          version;
     DSPetSetupConfig config;
 } SetupRecord;
 
@@ -22,13 +22,13 @@ static esp_err_t openStore(nvs_open_mode_t mode, nvs_handle_t *handle) {
 
 esp_err_t DSPetSetupStoreLoad(DSPetSetupConfig *config) {
     nvs_handle_t handle;
-    esp_err_t error = openStore(NVS_READONLY, &handle);
+    esp_err_t    error = openStore(NVS_READONLY, &handle);
     if (error != ESP_OK) {
         return error;
     }
     SetupRecord record = {0};
-    size_t length = sizeof(record);
-    error = nvs_get_blob(handle, kRecordKey, &record, &length);
+    size_t      length = sizeof(record);
+    error              = nvs_get_blob(handle, kRecordKey, &record, &length);
     nvs_close(handle);
     if (error == ESP_OK) {
         if (length != sizeof(record) || record.version != kRecordVersion || !DSPetSetupConfigValid(&record.config)) {
@@ -46,12 +46,12 @@ esp_err_t DSPetSetupStoreSave(const DSPetSetupConfig *config) {
         return ESP_ERR_INVALID_ARG;
     }
     nvs_handle_t handle;
-    esp_err_t error = openStore(NVS_READWRITE_PURGE, &handle);
+    esp_err_t    error = openStore(NVS_READWRITE_PURGE, &handle);
     if (error != ESP_OK) {
         return error;
     }
     SetupRecord record = {.version = kRecordVersion, .config = *config};
-    error = nvs_set_blob(handle, kRecordKey, &record, sizeof(record));
+    error              = nvs_set_blob(handle, kRecordKey, &record, sizeof(record));
     mbedtls_platform_zeroize(&record, sizeof(record));
     if (error == ESP_OK) {
         error = nvs_commit(handle);
@@ -62,7 +62,7 @@ esp_err_t DSPetSetupStoreSave(const DSPetSetupConfig *config) {
 
 esp_err_t DSPetSetupStoreClear(void) {
     nvs_handle_t handle;
-    esp_err_t error = openStore(NVS_READWRITE_PURGE, &handle);
+    esp_err_t    error = openStore(NVS_READWRITE_PURGE, &handle);
     if (error != ESP_OK) {
         return error;
     }

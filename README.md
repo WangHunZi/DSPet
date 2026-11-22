@@ -280,3 +280,20 @@ python3 tests/hardware/verify_direct_conversation.py --port /dev/cu.usbmodem1101
 可用 `python3 tests/human/verify_direct_conversation_human.py --port /dev/cu.usbmodem1101 --recording-display` 验收等开口、收音和回复结束后的画面。
 
 真人检查时再次开启免唤醒，直接问「你是谁？你最爱吃什么？」，听她是否按角色回答。之后可以随口说「今天有点闷」，检查没点名时也能接话。遇到静默时，通过串口的 ASR 和 `direct_ignored` 日志区分识别与回应结果。
+
+### 手机配网与恢复初始状态
+
+给直连构建追加 `tests/sdkconfig.provisioning.defaults`，并使用新的配置文件。
+
+```sh
+bash scripts/idf.sh -B .cache/build-setup -D SDKCONFIG=.cache/sdkconfig.setup \
+  -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;tests/sdkconfig.serial.defaults;tests/sdkconfig.direct.defaults;tests/sdkconfig.provisioning.defaults' \
+  build
+```
+
+1. 首次开机屏幕显示 Wi-Fi 二维码。用手机相机扫描并加入临时 `DSPet-…` 热点。
+2. 在弹出的配网页填写 2.4 GHz Wi-Fi 名称、密码和 DeepSeek API Key。如果手机没有自动弹窗，保持连接该热点，在浏览器打开屏幕上的 `http://192.168.4.1/`。
+3. 点「保存并联网」。设备把三项配置保存到 Flash 的 NVS 并重启。设备连上 Wi-Fi 并完成 SNTP 校时后进入直连唤醒待机。连接或校时失败时会重新显示配网二维码，便于更正配置。
+4. 要恢复初始状态，在设备运行时长按 BOOT 至少 5 秒，再松手。清除配置后会重启，重新显示配网二维码。
+
+板载 Shell 的 `dspet setup status` 显示配网、连接中或已上线。USB 串口的 `dspet setup hotspot` 可以按需查看一次性的热点口令。已保存的 Wi-Fi 密码和 API Key 不通过串口或网页回显。此配置使用 NVS 擦除和清理已删除的数据，尚未启用 Flash 静态加密。

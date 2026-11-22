@@ -9,3 +9,8 @@ dependencies:
     require: private
     rules:
       - if: "$CONFIG{DSPET_DIRECT_TEST} == True"
+  espressif/qrcode:
+    version: "==0.2.0"
+    require: private
+    rules:
+      - if: "$CONFIG{DSPET_PROVISIONING} == True"

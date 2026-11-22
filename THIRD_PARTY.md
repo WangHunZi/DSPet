@@ -8,3 +8,5 @@ ST7789 驱动使用 ESP-IDF 自带 `esp_lcd`（Apache-2.0）。
 角色动画来自 [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet)。
 固定版本、校验值、转换方法及作者见 [assets/README.md](assets/README.md)。
 素材按 CC BY-NC-SA 4.0 使用，相关文件不适用上游代码的 MIT 许可。
+
+配网二维码由 [espressif/qrcode 0.2.0](https://components.espressif.com/components/espressif/qrcode/versions/0.2.0/readme) 生成（Apache-2.0）。

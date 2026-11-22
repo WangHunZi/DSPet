@@ -94,4 +94,12 @@ menu "DSPet serial shell"
         help
             Requires console tests and PSRAM. Enable on-demand station scanning,
             HTTPS chat and TTS playback with one-shot credentials held in RAM.
+    config DSPET_PROVISIONING
+        bool "Enable phone provisioning and saved direct voice startup"
+        depends on DSPET_DIRECT_TEST && DSPET_LOCAL_VOICE
+        default n
+        help
+            Show a temporary WPA2 SoftAP QR code until Wi-Fi and DeepSeek
+            credentials are provisioned. Hold BOOT for five seconds and
+            release to erase the DSPet setup record and reboot.
 endmenu

@@ -5,9 +5,8 @@
 
 int main(void) {
     DSPetSetupConfig config;
-    assert(DSPetSetupFormParse("ssid=%E9%B2%B8%E9%B1%BC+2.4G&password=a%2Bb%26c123&token=abc&key=sk-test",
-                               "abc",
-                               &config));
+    assert(DSPetSetupFormParse(
+        "ssid=%E9%B2%B8%E9%B1%BC+2.4G&password=a%2Bb%26c123&token=abc&key=sk-test", "abc", &config));
     assert(strcmp(config.ssid, "鲸鱼 2.4G") == 0);
     assert(strcmp(config.password, "a+b&c123") == 0);
     assert(strcmp(config.key, "sk-test") == 0);

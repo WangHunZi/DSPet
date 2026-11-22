@@ -4,6 +4,9 @@
 #include "esp_check.h"
 #include "esp_console.h"
 #include "sdkconfig.h"
+#ifdef CONFIG_DSPET_PROVISIONING
+#include "DSPetSetup.h"
+#endif
 #ifdef CONFIG_DSPET_CONSOLE_TESTS
 #include "DSPetConsoleTests.h"
 #endif
@@ -102,6 +105,9 @@ static int handleVoice(const char *action) {
 static void printHelp(void) {
     puts("dspet help");
     puts("dspet info");
+#ifdef CONFIG_DSPET_PROVISIONING
+    puts("dspet setup <status|hotspot>");
+#endif
 #ifdef CONFIG_DSPET_LOCAL_VOICE
     puts("dspet voice <status|start|disable|enable>");
 #ifdef CONFIG_DSPET_DIRECT_TEST
@@ -125,6 +131,18 @@ static int handleCommand(int argc, char **argv) {
         printf("DSPET_INFO project=%s version=%s idf=%s\n", app->project_name, app->version, app->idf_ver);
         return 0;
     }
+#ifdef CONFIG_DSPET_PROVISIONING
+    if (argc == 3 && strcmp(argv[1], "setup") == 0) {
+        if (strcmp(argv[2], "status") == 0) {
+            DSPetSetupPrintStatus();
+            return 0;
+        }
+        if (strcmp(argv[2], "hotspot") == 0) {
+            DSPetSetupPrintHotspot();
+            return 0;
+        }
+    }
+#endif
 #ifdef CONFIG_DSPET_LOCAL_VOICE
     if (argc == 3 && strcmp(argv[1], "voice") == 0) {
         return handleVoice(argv[2]);

@@ -16,6 +16,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "sdkconfig.h"
+#ifdef CONFIG_DSPET_PROVISIONING
+#include "DSPetSetup.h"
+#endif
 #ifdef CONFIG_DSPET_LOCAL_VOICE
 #include "DSPetLocalVoice.h"
 #endif
@@ -50,7 +53,12 @@ static void runPet(void) {
              (unsigned) heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
     bool demoEnabled = false;
 #ifdef CONFIG_DSPET_LOCAL_VOICE
+#ifdef CONFIG_DSPET_PROVISIONING
+    ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetLocalVoiceInit(false));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetSetupStart());
+#else
     ESP_ERROR_CHECK_WITHOUT_ABORT(DSPetLocalVoiceInit(true));
+#endif
     const DSPetClip       *awake        = findClip("idle");
     const DSPetClip       *speaking     = findClip("wave");
     const DSPetClip *const voiceClips[] = {
@@ -90,6 +98,12 @@ static void runPet(void) {
     uint32_t         presses = 0;
     for (;;) {
         DSPetButtonTakeCount(&presses);
+#ifdef CONFIG_DSPET_PROVISIONING
+        if (DSPetSetupUpdate(DSPetButtonTakeLongPress())) {
+            vTaskDelay(pdMS_TO_TICKS(20));
+            continue;
+        }
+#endif
 #ifdef CONFIG_DSPET_LOCAL_VOICE
         if (presses && DSPetLocalVoiceGetMode() != kDSPetLocalVoiceOff) {
             DSPetLocalVoiceStart();

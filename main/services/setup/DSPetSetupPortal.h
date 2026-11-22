@@ -9,7 +9,7 @@
 
 /** @brief 仅在临时热点开启期间有效的入网信息。 */
 typedef struct {
-    char ssid[13];     /**< DSPet 加设备标识。 */
+    char ssid[13];     /**< DSPet 加本轮随机后缀。 */
     char password[17]; /**< 本轮生成的随机 WPA2 口令。 */
 } DSPetSetupHotspot;
 

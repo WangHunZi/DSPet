@@ -10,17 +10,16 @@
 #include "DSPetWifi.h"
 #include "bootloader_random.h"
 #include "esp_http_server.h"
-#include "esp_mac.h"
 #include "esp_random.h"
 #include "lwip/sockets.h"
 #include "mbedtls/platform_util.h"
 
 enum { kMaxFormBytes = 800, kDnsHeaderBytes = 12, kDnsPort = 53 };
-static const char kPortalUrl[] = "http://" DSPET_SETUP_PORTAL_ADDRESS "/";
+static const char     kPortalUrl[] = "http://" DSPET_SETUP_PORTAL_ADDRESS "/";
 static httpd_handle_t sServer;
-static int sDnsSocket = -1;
-static atomic_bool sSaved;
-static char sToken[33];
+static int            sDnsSocket = -1;
+static atomic_bool    sSaved;
+static char           sToken[33];
 
 static void hexEncode(char *out, const uint8_t *bytes, size_t count) {
     const char hex[] = "0123456789abcdef";
@@ -36,7 +35,8 @@ static const char kFormHead[] =
     "<meta name=viewport content='width=device-width,initial-scale=1'>"
     "<title>DSPet 配网</title><style>"
     "body{font:1rem system-ui;margin:2rem auto;max-width:25rem;padding:0 1rem;color:#142d41;background:#ecf6fb}"
-    "form{display:grid;gap:1rem}label{display:grid;gap:.3rem}input,button{font:inherit;padding:.7rem;border-radius:.5rem;"
+    "form{display:grid;gap:1rem}label{display:grid;gap:.3rem}input,button{font:inherit;padding:.7rem;border-radius:."
+    "5rem;"
     "border:1px solid #52718b}button{background:#145078;color:#fff}</style>"
     "<h1>DSPet 配网</h1><form method=post action=/setup>"
     "<label>Wi-Fi 名称（2.4 GHz）<input name=ssid maxlength=32 autocomplete=off required></label>"
@@ -92,9 +92,9 @@ static esp_err_t saveForm(httpd_req_t *request) {
         }
         received += (size_t) count;
     }
-    body[size] = '\0';
+    body[size]              = '\0';
     DSPetSetupConfig config = {0};
-    const bool parsed = !memchr(body, 0, size) && DSPetSetupFormParse(body, sToken, &config);
+    const bool       parsed = !memchr(body, 0, size) && DSPetSetupFormParse(body, sToken, &config);
     mbedtls_platform_zeroize(body, sizeof(body));
     const esp_err_t error = parsed ? DSPetSetupStoreSave(&config) : ESP_ERR_INVALID_ARG;
     mbedtls_platform_zeroize(&config, sizeof(config));
@@ -103,7 +103,8 @@ static esp_err_t saveForm(httpd_req_t *request) {
     if (error != ESP_OK) {
         httpd_resp_set_status(request, parsed ? "500 Internal Server Error" : "400 Bad Request");
         return httpd_resp_sendstr(
-            request, "<meta charset=utf-8><p>保存失败。请检查 Wi-Fi 名称、密码和 API Key，再重试。</p><a href=/>返回</a>");
+            request,
+            "<meta charset=utf-8><p>保存失败。请检查 Wi-Fi 名称、密码和 API Key，再重试。</p><a href=/>返回</a>");
     }
     const esp_err_t sent = httpd_resp_sendstr(request, "<meta charset=utf-8><p>已保存。桌宠正在重启并连接 Wi-Fi。</p>");
     // 即使客户端已断开，已提交的配置也应在本次重启生效。
@@ -112,15 +113,15 @@ static esp_err_t saveForm(httpd_req_t *request) {
 }
 
 static esp_err_t startHttp(void) {
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.uri_match_fn = httpd_uri_match_wildcard;
-    config.lru_purge_enable = true;
+    httpd_config_t config    = HTTPD_DEFAULT_CONFIG();
+    config.uri_match_fn      = httpd_uri_match_wildcard;
+    config.lru_purge_enable  = true;
     config.recv_wait_timeout = 3;
-    esp_err_t error = httpd_start(&sServer, &config);
+    esp_err_t error          = httpd_start(&sServer, &config);
     if (error == ESP_OK) {
-        const httpd_uri_t get = {.uri = "/*", .method = HTTP_GET, .handler = showForm};
+        const httpd_uri_t get  = {.uri = "/*", .method = HTTP_GET, .handler = showForm};
         const httpd_uri_t post = {.uri = "/setup", .method = HTTP_POST, .handler = saveForm};
-        error = httpd_register_uri_handler(sServer, &get);
+        error                  = httpd_register_uri_handler(sServer, &get);
         if (error == ESP_OK) {
             error = httpd_register_uri_handler(sServer, &post);
         }
@@ -130,13 +131,13 @@ static esp_err_t startHttp(void) {
 
 static esp_err_t startDns(void) {
     const struct sockaddr_in address = {
-        .sin_family = AF_INET,
-        .sin_port = htons(kDnsPort),
+        .sin_family      = AF_INET,
+        .sin_port        = htons(kDnsPort),
         .sin_addr.s_addr = inet_addr(DSPET_SETUP_PORTAL_ADDRESS),
     };
     sDnsSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    return sDnsSocket >= 0 && bind(sDnsSocket, (const struct sockaddr *) &address, sizeof(address)) == 0
-               ? ESP_OK : ESP_FAIL;
+    return sDnsSocket >= 0 && bind(sDnsSocket, (const struct sockaddr *) &address, sizeof(address)) == 0 ? ESP_OK
+                                                                                                         : ESP_FAIL;
 }
 
 static size_t dnsReply(uint8_t *bytes, size_t length, size_t capacity) {
@@ -174,8 +175,9 @@ static void pollDns(void) {
     uint8_t bytes[512];
     for (unsigned i = 0; i < 4; ++i) {
         struct sockaddr_in peer;
-        socklen_t peerLength = sizeof(peer);
-        const int count = recvfrom(sDnsSocket, bytes, sizeof(bytes), MSG_DONTWAIT, (struct sockaddr *) &peer, &peerLength);
+        socklen_t          peerLength = sizeof(peer);
+        const int          count =
+            recvfrom(sDnsSocket, bytes, sizeof(bytes), MSG_DONTWAIT, (struct sockaddr *) &peer, &peerLength);
         if (count <= 0) {
             return;
         }
@@ -187,20 +189,15 @@ static void pollDns(void) {
 }
 
 esp_err_t DSPetSetupPortalStart(DSPetSetupHotspot *hotspot) {
-    uint8_t mac[6];
-    esp_err_t error = esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
-    if (error != ESP_OK) {
-        return error;
-    }
-    memcpy(hotspot->ssid, "DSPet-", 6);
-    hexEncode(hotspot->ssid + 6, mac + 3, 3);
     uint8_t random[16];
-    // 此时无线尚未启动，临时启用硬件熵源生成 WPA2 口令。
+    // 此时无线尚未启动，临时启用硬件熵源生成入网信息。
     bootloader_random_enable();
-    esp_fill_random(random, 8);
+    esp_fill_random(random, 11);
     bootloader_random_disable();
+    memcpy(hotspot->ssid, "DSPet-", 6);
+    hexEncode(hotspot->ssid + 6, random + 8, 3);
     hexEncode(hotspot->password, random, 8);
-    error = DSPetWifiOpenAccessPoint(hotspot->ssid, hotspot->password);
+    esp_err_t error = DSPetWifiOpenAccessPoint(hotspot->ssid, hotspot->password);
     if (error == ESP_OK) {
         esp_fill_random(random, sizeof(random));
         hexEncode(sToken, random, sizeof(random));

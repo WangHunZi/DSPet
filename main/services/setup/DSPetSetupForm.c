@@ -71,8 +71,8 @@ bool DSPetSetupFormParse(const char *body, const char *token, DSPetSetupConfig *
     *config = (DSPetSetupConfig) {0};
     const struct {
         const char *name;
-        char *out;
-        size_t capacity;
+        char       *out;
+        size_t      capacity;
     } fields[] = {
         {"ssid", config->ssid, sizeof(config->ssid)},
         {"password", config->password, sizeof(config->password)},
@@ -80,9 +80,9 @@ bool DSPetSetupFormParse(const char *body, const char *token, DSPetSetupConfig *
         {"token", formToken, sizeof(formToken)},
     };
     const size_t fieldCount = sizeof(fields) / sizeof(fields[0]);
-    unsigned seen = 0;
+    unsigned     seen       = 0;
     while (*body) {
-        const char *end = body + strcspn(body, "&");
+        const char *end    = body + strcspn(body, "&");
         const char *equals = memchr(body, '=', (size_t) (end - body));
         if (!equals) {
             return false;

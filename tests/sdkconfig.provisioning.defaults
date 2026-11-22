@@ -1,0 +1,2 @@
+# Append to sdkconfig.defaults, tests/sdkconfig.serial.defaults and tests/sdkconfig.direct.defaults.
+CONFIG_DSPET_PROVISIONING=y
