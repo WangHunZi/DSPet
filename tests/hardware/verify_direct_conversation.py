@@ -64,7 +64,9 @@ def verify_fixture_barge_in(board):
         )
         evidence.add(event.group().split()[0])
     assert len(evidence) == 2
-    board.expect(fr"DSPET_DIRECT_ASR turn={second} elapsed_us=\d+ text=\S+", 58)
+    asr = board.expect(fr"DSPET_DIRECT_ASR turn={second} elapsed_us=\d+ text=\S+|DSPET_VOICE event=direct_error", 58)
+    if "direct_error" in asr.group():
+        raise RuntimeError("旧回合已排空和关闭，下一轮 ASR 请求失败。")
     board.expect(fr"DSPET_VOICE event=playback_started state=speaking turn={second}\b", 50)
     board.expect(r"DSPET_VOICE event=playback_finished state=listening turn=\d+", 50)
     board.expect(r"DSPET_VOICE event=listen_timeout state=idle turn=\d+", 13)
