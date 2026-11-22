@@ -60,6 +60,9 @@ idf_component_register(
     REQUIRES console esp_app_format esp_lcd esp_driver_gpio esp_driver_spi esp_driver_i2s esp_timer esp_rom
     EMBED_FILES ${binaries})
 if(CONFIG_DSPET_AEC)
+    if(NOT CONFIG_SPIRAM OR CONFIG_SPIRAM_USE_MEMMAP)
+        message(FATAL_ERROR "DSPet AEC requires PSRAM registered with the heap capabilities allocator")
+    endif()
     target_sources(${COMPONENT_LIB} PRIVATE "services/audio/DSPetAec.c" "services/audio/DSPetAecSync.c")
 endif()
 if(CONFIG_DSPET_PLAYBACK_DEMO OR CONFIG_DSPET_CONSOLE_TESTS)

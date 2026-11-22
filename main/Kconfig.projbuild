@@ -27,8 +27,11 @@ endmenu
 menu "DSPet audio"
     config DSPET_AEC
         bool "Enable the ESP-SR acoustic echo cancellation service"
-        depends on IDF_TARGET_ESP32S3 && SPIRAM
+        depends on IDF_TARGET_ESP32S3
         default n
+        help
+            Enable PSRAM before building this service. Use octal mode on
+            XIAO ESP32S3 Plus.
 
     config DSPET_AUDIO_CHECK
         bool "Run the offline I2S hardware check at boot"
