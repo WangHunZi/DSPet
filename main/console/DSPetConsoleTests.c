@@ -94,7 +94,9 @@ esp_err_t DSPetConsoleTestsInit(void) {
         return ESP_ERR_NO_MEM;
     }
     TaskHandle_t task;
-    if (xTaskCreate(testTask, "dspet-test", 4096, NULL, 3, &task) != pdPASS) {
+    // 主应用在 CPU0 绘制动画，音频诊断的批量运算在另一核执行。
+    const BaseType_t testCore = CONFIG_FREERTOS_NUMBER_OF_CORES > 1 ? 1 : 0;
+    if (xTaskCreatePinnedToCore(testTask, "dspet-test", 4096, NULL, 3, &task, testCore) != pdPASS) {
         vQueueDelete(sRequests);
         sRequests = NULL;
         return ESP_ERR_NO_MEM;
