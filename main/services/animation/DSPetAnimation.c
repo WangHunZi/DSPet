@@ -5,6 +5,7 @@
 #include "DSPetIndexedFrame.h"
 #include "esp_heap_caps.h"
 #include "miniz.h"
+#include "sdkconfig.h"
 
 static uint8_t            *sDecoded;
 static uint8_t            *sPrevious;
@@ -20,8 +21,13 @@ esp_err_t DSPetAnimationInit(size_t pixelCount) {
     if (pixelCount < kDSPetIndexedFramePaletteBytes || pixelCount > SIZE_MAX / 2) {
         return ESP_ERR_INVALID_ARG;
     }
-    uint8_t            *decoded  = heap_caps_malloc(pixelCount * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    uint8_t            *previous = heap_caps_malloc(pixelCount, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    uint8_t *decoded = heap_caps_malloc(pixelCount * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+#ifdef CONFIG_DSPET_LOCAL_VOICE
+    // 上一帧索引仅供 CPU 恢复差分，将内部 RAM 留给语音模型和 DMA。
+    uint8_t *previous = heap_caps_malloc(pixelCount, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
+    uint8_t *previous = heap_caps_malloc(pixelCount, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+#endif
     tinfl_decompressor *inflater = calloc(1, sizeof(*inflater));
     if (!decoded || !previous || !inflater) {
         free(decoded);
