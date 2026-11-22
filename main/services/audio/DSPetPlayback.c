@@ -1,39 +1,39 @@
 #include "DSPetPlayback.h"
+
+#include <stdatomic.h>
+
 #include "DSPetAudioDevice.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
-#include <stdatomic.h>
 
 enum { kWriteTimeoutMs = 40, kDrainTimeoutMs = 120 };
 
 typedef struct {
     const int16_t *samples;
-    size_t sampleCount;
+    size_t         sampleCount;
 } PlaybackRequest;
 
 static QueueHandle_t sRequests;
 static QueueHandle_t sEvents;
 // 忙碌标志只由应用任务访问，取消信号由两个任务共享。
-static bool sBusy;
+static bool        sBusy;
 static atomic_bool sCancelRequested;
 
-static void publishEvent(DSPetPlaybackEventKind kind, esp_err_t error)
-{
+static void publishEvent(DSPetPlaybackEventKind kind, esp_err_t error) {
     DSPetPlaybackEvent event = {.kind = kind, .error = error, .occurredUs = esp_timer_get_time()};
     // 一个请求最多两条事件，应用读到终态后才允许提交下一条请求。
     xQueueSend(sEvents, &event, portMAX_DELAY);
 }
 
-static void playRequest(const PlaybackRequest *request)
-{
+static void playRequest(const PlaybackRequest *request) {
     if (atomic_load(&sCancelRequested)) {
         publishEvent(kDSPetPlaybackEventCancelled, ESP_OK);
         return;
     }
     esp_err_t writeResult = ESP_OK;
-    bool wrote = false;
+    bool      wrote       = false;
     for (size_t offset = 0; offset < request->sampleCount && !atomic_load(&sCancelRequested);) {
         size_t count = request->sampleCount - offset;
         if (count > kDSPetAudioDeviceBlockSamples) {
@@ -67,8 +67,7 @@ static void playRequest(const PlaybackRequest *request)
     }
 }
 
-static void playbackTask(void *context)
-{
+static void playbackTask(void *context) {
     PlaybackRequest request;
     for (;;) {
         if (xQueueReceive(sRequests, &request, portMAX_DELAY) == pdTRUE) {
@@ -77,13 +76,12 @@ static void playbackTask(void *context)
     }
 }
 
-esp_err_t DSPetPlaybackInit(void)
-{
+esp_err_t DSPetPlaybackInit(void) {
     if (sRequests) {
         return ESP_ERR_INVALID_STATE;
     }
     sRequests = xQueueCreate(1, sizeof(PlaybackRequest));
-    sEvents = xQueueCreate(2, sizeof(DSPetPlaybackEvent));
+    sEvents   = xQueueCreate(2, sizeof(DSPetPlaybackEvent));
     if (sRequests && sEvents && xTaskCreate(playbackTask, "pcm-playback", 3072, NULL, 4, NULL) == pdPASS) {
         return ESP_OK;
     }
@@ -98,8 +96,7 @@ esp_err_t DSPetPlaybackInit(void)
     return ESP_ERR_NO_MEM;
 }
 
-esp_err_t DSPetPlaybackStart(const int16_t *samples, size_t sampleCount)
-{
+esp_err_t DSPetPlaybackStart(const int16_t *samples, size_t sampleCount) {
     if (!samples || !sampleCount) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -115,8 +112,7 @@ esp_err_t DSPetPlaybackStart(const int16_t *samples, size_t sampleCount)
     return ESP_OK;
 }
 
-bool DSPetPlaybackCancel(void)
-{
+bool DSPetPlaybackCancel(void) {
     if (!sBusy) {
         return false;
     }
@@ -124,8 +120,7 @@ bool DSPetPlaybackCancel(void)
     return true;
 }
 
-bool DSPetPlaybackTakeEvent(DSPetPlaybackEvent *event)
-{
+bool DSPetPlaybackTakeEvent(DSPetPlaybackEvent *event) {
     if (!event || !sEvents || xQueueReceive(sEvents, event, 0) != pdTRUE) {
         return false;
     }

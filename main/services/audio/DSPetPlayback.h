@@ -4,21 +4,22 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
 #include "esp_err.h"
 
 /** @brief 播放任务向应用发布的状态变化。 */
 typedef enum {
-    kDSPetPlaybackEventQueued, /**< 第一块 PCM 已排入 DMA。 */
-    kDSPetPlaybackEventFinished, /**< 片段自然结束，输出已排空。 */
+    kDSPetPlaybackEventQueued,    /**< 第一块 PCM 已排入 DMA。 */
+    kDSPetPlaybackEventFinished,  /**< 片段自然结束，输出已排空。 */
     kDSPetPlaybackEventCancelled, /**< 已停止追加旧样本，输出已排空。 */
-    kDSPetPlaybackEventFailed, /**< 播放或排空失败，详情见 error。 */
+    kDSPetPlaybackEventFailed,    /**< 播放或排空失败，详情见 error。 */
 } DSPetPlaybackEventKind;
 
 /** @brief 一次播放的通知。 */
 typedef struct {
-    DSPetPlaybackEventKind kind; /**< 当前通知类型。 */
-    esp_err_t error; /**< 失败时的底层错误，其余为 ESP_OK。 */
-    int64_t occurredUs; /**< 播放任务发出事件时的单调时钟，单位微秒。 */
+    DSPetPlaybackEventKind kind;       /**< 当前通知类型。 */
+    esp_err_t              error;      /**< 失败时的底层错误，其余为 ESP_OK。 */
+    int64_t                occurredUs; /**< 播放任务发出事件时的单调时钟，单位微秒。 */
 } DSPetPlaybackEvent;
 
 /**

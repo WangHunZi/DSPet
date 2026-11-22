@@ -1,7 +1,8 @@
 #include "DSPetPanel.h"
+
 #include <assert.h>
 #include <string.h>
-#include "sdkconfig.h"
+
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "esp_heap_caps.h"
@@ -12,29 +13,25 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "sdkconfig.h"
 
 // 使用芯片 GPIO 编号。D9 作片选，屏幕只写。
-enum { kPinBacklight = 6, kPinReset = 5, kPinDc = 4,
-       kPinMosi = 9, kPinClock = 7, kPinCs = 8 };
+enum { kPinBacklight = 6, kPinReset = 5, kPinDc = 4, kPinMosi = 9, kPinClock = 7, kPinCs = 8 };
 
 static esp_lcd_panel_handle_t sPanel;
-static uint8_t *sDmaFrame;
-static SemaphoreHandle_t sTransferDone;
-static bool sTimedOut;
-static const char *const kTag = "display";
+static uint8_t               *sDmaFrame;
+static SemaphoreHandle_t      sTransferDone;
+static bool                   sTimedOut;
+static const char *const      kTag = "display";
 
-static bool colorDone(esp_lcd_panel_io_handle_t io,
-                       esp_lcd_panel_io_event_data_t *event, void *context)
-{
+static bool colorDone(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_data_t *event, void *context) {
     BaseType_t wakeTask = pdFALSE;
-    xSemaphoreGiveFromISR((SemaphoreHandle_t)context, &wakeTask);
+    xSemaphoreGiveFromISR((SemaphoreHandle_t) context, &wakeTask);
     return wakeTask == pdTRUE;
 }
 
-static esp_err_t sendFrame(void)
-{
-    esp_err_t err = esp_lcd_panel_draw_bitmap(sPanel, 0, 0,
-                                             kDSPetPanelWidthPx, kDSPetPanelHeightPx, sDmaFrame);
+static esp_err_t sendFrame(void) {
+    esp_err_t err = esp_lcd_panel_draw_bitmap(sPanel, 0, 0, kDSPetPanelWidthPx, kDSPetPanelHeightPx, sDmaFrame);
     if (err != ESP_OK) {
         return err;
     }
@@ -46,18 +43,16 @@ static esp_err_t sendFrame(void)
     return ESP_OK;
 }
 
-void DSPetPanelFill(uint16_t rgb565)
-{
+void DSPetPanelFill(uint16_t rgb565) {
     ESP_ERROR_CHECK(sPanel && sDmaFrame && !sTimedOut ? ESP_OK : ESP_ERR_INVALID_STATE);
     for (size_t i = 0; i < kDSPetPanelFrameBytes; i += 2) {
-        sDmaFrame[i] = rgb565 >> 8;
+        sDmaFrame[i]     = rgb565 >> 8;
         sDmaFrame[i + 1] = rgb565 & 0xFF;
     }
     ESP_ERROR_CHECK(sendFrame());
 }
 
-esp_err_t DSPetPanelPresent(const uint8_t *pixels, size_t sizeBytes)
-{
+esp_err_t DSPetPanelPresent(const uint8_t *pixels, size_t sizeBytes) {
     if (!sPanel || sTimedOut) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -68,33 +63,43 @@ esp_err_t DSPetPanelPresent(const uint8_t *pixels, size_t sizeBytes)
     return sendFrame();
 }
 
-void DSPetPanelInit(void)
-{
+void DSPetPanelInit(void) {
     assert(!sPanel);
-    ESP_LOGI(kTag, "240x240 SPI=%dMHz mode=%d Y=%d", CONFIG_DSPET_LCD_SPI_MHZ,
-             CONFIG_DSPET_LCD_SPI_MODE, CONFIG_DSPET_LCD_Y_GAP);
+    ESP_LOGI(kTag,
+             "240x240 SPI=%dMHz mode=%d Y=%d",
+             CONFIG_DSPET_LCD_SPI_MHZ,
+             CONFIG_DSPET_LCD_SPI_MODE,
+             CONFIG_DSPET_LCD_Y_GAP);
     gpio_config_t backlight = {
-        .pin_bit_mask = 1ULL << kPinBacklight, .mode = GPIO_MODE_OUTPUT,
+        .pin_bit_mask = 1ULL << kPinBacklight,
+        .mode         = GPIO_MODE_OUTPUT,
     };
     ESP_ERROR_CHECK(gpio_config(&backlight));
     ESP_ERROR_CHECK(gpio_set_level(kPinBacklight, 0));
-    sDmaFrame = heap_caps_malloc(kDSPetPanelFrameBytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    sDmaFrame     = heap_caps_malloc(kDSPetPanelFrameBytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     sTransferDone = xSemaphoreCreateBinary();
     assert(sDmaFrame && sTransferDone);
 
     spi_bus_config_t bus = {
-        .mosi_io_num = kPinMosi, .miso_io_num = -1, .sclk_io_num = kPinClock,
-        .quadwp_io_num = -1, .quadhd_io_num = -1,
+        .mosi_io_num     = kPinMosi,
+        .miso_io_num     = -1,
+        .sclk_io_num     = kPinClock,
+        .quadwp_io_num   = -1,
+        .quadhd_io_num   = -1,
         .max_transfer_sz = kDSPetPanelFrameBytes,
     };
     ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO));
-    esp_lcd_panel_io_handle_t io;
+    esp_lcd_panel_io_handle_t     io;
     esp_lcd_panel_io_spi_config_t io_config = {
-        .cs_gpio_num = kPinCs, .dc_gpio_num = kPinDc,
-        .spi_mode = CONFIG_DSPET_LCD_SPI_MODE,
-        .pclk_hz = CONFIG_DSPET_LCD_SPI_MHZ * 1000000,
-        .trans_queue_depth = 1, .lcd_cmd_bits = 8, .lcd_param_bits = 8,
-        .on_color_trans_done = colorDone, .user_ctx = sTransferDone,
+        .cs_gpio_num         = kPinCs,
+        .dc_gpio_num         = kPinDc,
+        .spi_mode            = CONFIG_DSPET_LCD_SPI_MODE,
+        .pclk_hz             = CONFIG_DSPET_LCD_SPI_MHZ * 1000000,
+        .trans_queue_depth   = 1,
+        .lcd_cmd_bits        = 8,
+        .lcd_param_bits      = 8,
+        .on_color_trans_done = colorDone,
+        .user_ctx            = sTransferDone,
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(SPI2_HOST, &io_config, &io));
     esp_lcd_panel_dev_config_t config = {
@@ -118,17 +123,23 @@ void DSPetPanelInit(void)
     ESP_ERROR_CHECK(esp_lcd_panel_init(sPanel));
 
     // 沿用调试版上板验证过的初始化参数，来源见 THIRD_PARTY.md。
-    static const struct { uint8_t command, sizeBytes, data[14]; } settings[] = {
-        {0xB2, 5, {0x0C,0x0C,0x00,0x33,0x33}},
-        {0xB7, 1, {0x35}}, {0xBB, 1, {0x19}}, {0xC0, 1, {0x2C}},
-        {0xC2, 1, {0x01}}, {0xC3, 1, {0x12}}, {0xC4, 1, {0x20}},
-        {0xC6, 1, {0x0F}}, {0xD0, 2, {0xA4,0xA1}},
-        {0xE0,14,{0xD0,0x04,0x0D,0x11,0x13,0x2B,0x3F,0x54,0x4C,0x18,0x0D,0x0B,0x1F,0x23}},
-        {0xE1,14,{0xD0,0x04,0x0C,0x11,0x13,0x2C,0x3F,0x44,0x51,0x2F,0x1F,0x1F,0x20,0x23}},
+    static const struct {
+        uint8_t command, sizeBytes, data[14];
+    } settings[] = {
+        {0xB2, 5, {0x0C, 0x0C, 0x00, 0x33, 0x33}},
+        {0xB7, 1, {0x35}},
+        {0xBB, 1, {0x19}},
+        {0xC0, 1, {0x2C}},
+        {0xC2, 1, {0x01}},
+        {0xC3, 1, {0x12}},
+        {0xC4, 1, {0x20}},
+        {0xC6, 1, {0x0F}},
+        {0xD0, 2, {0xA4, 0xA1}},
+        {0xE0, 14, {0xD0, 0x04, 0x0D, 0x11, 0x13, 0x2B, 0x3F, 0x54, 0x4C, 0x18, 0x0D, 0x0B, 0x1F, 0x23}},
+        {0xE1, 14, {0xD0, 0x04, 0x0C, 0x11, 0x13, 0x2C, 0x3F, 0x44, 0x51, 0x2F, 0x1F, 0x1F, 0x20, 0x23}},
     };
     for (size_t i = 0; i < sizeof(settings) / sizeof(settings[0]); ++i)
-        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(io, settings[i].command,
-                                                 settings[i].data, settings[i].sizeBytes));
+        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(io, settings[i].command, settings[i].data, settings[i].sizeBytes));
 #ifdef CONFIG_DSPET_LCD_INVERT
     ESP_ERROR_CHECK(esp_lcd_panel_invert_color(sPanel, true));
 #else

@@ -1,8 +1,9 @@
 #include "DSPetAudioDevice.h"
+
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
-#include "esp_check.h"
 #include "esp_attr.h"
+#include "esp_check.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -14,83 +15,79 @@ enum { kDmaBlocks = 4, kTapQueueBlocks = 16, kMicDataPin = GPIO_NUM_44 };
 static const char *const kTag = "audio_device";
 static i2s_chan_handle_t sTx;
 static i2s_chan_handle_t sRx;
-static bool sTxActive;
-static bool sRxActive;
+static bool              sTxActive;
+static bool              sRxActive;
 static SemaphoreHandle_t sTxDone;
-static portMUX_TYPE sTxLock = portMUX_INITIALIZER_UNLOCKED;
-static uint32_t sTxCompletedBlocks;
-static uint32_t sRxCompletedBlocks;
-static QueueHandle_t sTapQueue;
-static bool sTapActive;
+static portMUX_TYPE      sTxLock = portMUX_INITIALIZER_UNLOCKED;
+static uint32_t          sTxCompletedBlocks;
+static uint32_t          sRxCompletedBlocks;
+static QueueHandle_t     sTapQueue;
+static bool              sTapActive;
 // 收发各有独立的槽缓冲，调用方可以分别从读写任务使用。
 static int32_t sTxSlots[kDSPetAudioDeviceBlockSamples][2];
 static int32_t sRxSlots[kDSPetAudioDeviceBlockSamples][2];
 
-static void IRAM_ATTR copyTapFromIsr(QueueHandle_t queue, DSPetAudioTapSource source, uint32_t index,
-                                    const i2s_event_data_t *event, BaseType_t *wake)
-{
+static void IRAM_ATTR copyTapFromIsr(
+    QueueHandle_t queue, DSPetAudioTapSource source, uint32_t index, const i2s_event_data_t *event, BaseType_t *wake) {
     if (!queue || !event->dma_buf || event->size != sizeof(sTxSlots)) {
         return;
     }
     DSPetAudioTapBlock block;
-    block.dmaEofUs = esp_timer_get_time();
-    block.source = source;
-    block.blockIndex = index;
+    block.dmaEofUs            = esp_timer_get_time();
+    block.source              = source;
+    block.blockIndex          = index;
     const int32_t (*slots)[2] = event->dma_buf;
     for (size_t i = 0; i < kDSPetAudioDeviceBlockSamples; ++i) {
-        block.samples[i] = (int16_t)(slots[i][0] >> 16);
+        block.samples[i] = (int16_t) (slots[i][0] >> 16);
     }
     xQueueSendFromISR(queue, &block, wake);
 }
 
-static bool IRAM_ATTR txDone(i2s_chan_handle_t channel, i2s_event_data_t *event, void *context)
-{
+static bool IRAM_ATTR txDone(i2s_chan_handle_t channel, i2s_event_data_t *event, void *context) {
     portENTER_CRITICAL_ISR(&sTxLock);
-    uint32_t index = sTxCompletedBlocks++;
-    QueueHandle_t tap = sTapActive ? sTapQueue : NULL;
+    uint32_t      index = sTxCompletedBlocks++;
+    QueueHandle_t tap   = sTapActive ? sTapQueue : NULL;
     portEXIT_CRITICAL_ISR(&sTxLock);
     BaseType_t wake = pdFALSE;
     // ESP-IDF 在 on_sent 返回后清零，趁此时复制实际经过 TX DMA 的样本。
     copyTapFromIsr(tap, kDSPetAudioTapPlayback, index, event, &wake);
-    xSemaphoreGiveFromISR((SemaphoreHandle_t)context, &wake);
+    xSemaphoreGiveFromISR((SemaphoreHandle_t) context, &wake);
     return wake == pdTRUE;
 }
 
-static bool IRAM_ATTR rxDone(i2s_chan_handle_t channel, i2s_event_data_t *event, void *context)
-{
+static bool IRAM_ATTR rxDone(i2s_chan_handle_t channel, i2s_event_data_t *event, void *context) {
     portENTER_CRITICAL_ISR(&sTxLock);
-    uint32_t index = sRxCompletedBlocks++;
-    QueueHandle_t tap = sTapActive ? sTapQueue : NULL;
+    uint32_t      index = sRxCompletedBlocks++;
+    QueueHandle_t tap   = sTapActive ? sTapQueue : NULL;
     portEXIT_CRITICAL_ISR(&sTxLock);
     BaseType_t wake = pdFALSE;
     copyTapFromIsr(tap, kDSPetAudioTapMic, index, event, &wake);
     return wake == pdTRUE;
 }
 
-static uint32_t txCompletedBlocks(void)
-{
+static uint32_t txCompletedBlocks(void) {
     portENTER_CRITICAL(&sTxLock);
     uint32_t completed = sTxCompletedBlocks;
     portEXIT_CRITICAL(&sTxLock);
     return completed;
 }
 
-static esp_err_t prepareChannels(void)
-{
-    i2s_chan_config_t channel = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
-    channel.dma_frame_num = kDSPetAudioDeviceBlockSamples;
-    channel.dma_desc_num = kDmaBlocks;
+static esp_err_t prepareChannels(void) {
+    i2s_chan_config_t channel   = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
+    channel.dma_frame_num       = kDSPetAudioDeviceBlockSamples;
+    channel.dma_desc_num        = kDmaBlocks;
     channel.auto_clear_after_cb = true;
-    i2s_std_config_t config = {
-        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(kDSPetAudioDeviceSampleRateHz),
+    i2s_std_config_t config     = {
+        .clk_cfg  = I2S_STD_CLK_DEFAULT_CONFIG(kDSPetAudioDeviceSampleRateHz),
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO),
-        .gpio_cfg = {
-            .mclk = I2S_GPIO_UNUSED,
-            .bclk = GPIO_NUM_1,  // D0，BCLK/SCK
-            .ws = GPIO_NUM_2,    // D1，LRC/WS
-            .dout = GPIO_NUM_43, // D6，MAX98357A DIN
-            .din = kMicDataPin,  // D7，INMP441 SD
-        },
+        .gpio_cfg =
+            {
+                .mclk = I2S_GPIO_UNUSED,
+                .bclk = GPIO_NUM_1,   // D0，BCLK/SCK
+                .ws   = GPIO_NUM_2,   // D1，LRC/WS
+                .dout = GPIO_NUM_43,  // D6，MAX98357A DIN
+                .din  = kMicDataPin,  // D7，INMP441 SD
+            },
     };
     ESP_RETURN_ON_ERROR(i2s_new_channel(&channel, &sTx, &sRx), kTag, "allocate I2S channels");
     // 先初始化 TX，由 TX 提供共享时钟。
@@ -103,8 +100,7 @@ static esp_err_t prepareChannels(void)
     return gpio_pulldown_en(kMicDataPin);
 }
 
-esp_err_t DSPetAudioDeviceOpen(void)
-{
+esp_err_t DSPetAudioDeviceOpen(void) {
     if (sTx || sRx) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -114,7 +110,7 @@ esp_err_t DSPetAudioDeviceOpen(void)
     }
     sTxCompletedBlocks = 0;
     sRxCompletedBlocks = 0;
-    esp_err_t error = prepareChannels();
+    esp_err_t error    = prepareChannels();
     if (error == ESP_OK) {
         error = i2s_channel_enable(sTx);
     }
@@ -127,8 +123,7 @@ esp_err_t DSPetAudioDeviceOpen(void)
     return error;
 }
 
-esp_err_t DSPetAudioDeviceStartCapture(void)
-{
+esp_err_t DSPetAudioDeviceStartCapture(void) {
     if (!sTxActive || sRxActive) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -139,8 +134,7 @@ esp_err_t DSPetAudioDeviceStartCapture(void)
     return error;
 }
 
-esp_err_t DSPetAudioDeviceStopCapture(void)
-{
+esp_err_t DSPetAudioDeviceStopCapture(void) {
     if (!sRxActive) {
         return ESP_OK;
     }
@@ -151,8 +145,7 @@ esp_err_t DSPetAudioDeviceStopCapture(void)
     return error;
 }
 
-esp_err_t DSPetAudioDeviceClose(void)
-{
+esp_err_t DSPetAudioDeviceClose(void) {
     portENTER_CRITICAL(&sTxLock);
     sTapActive = false;
     portEXIT_CRITICAL(&sTxLock);
@@ -176,29 +169,27 @@ esp_err_t DSPetAudioDeviceClose(void)
     return ESP_OK;
 }
 
-esp_err_t DSPetAudioDeviceRead(int16_t *samples, size_t sampleCount, uint32_t timeoutMs)
-{
+esp_err_t DSPetAudioDeviceRead(int16_t *samples, size_t sampleCount, uint32_t timeoutMs) {
     if (!sRxActive) {
         return ESP_ERR_INVALID_STATE;
     }
     if (!samples || !sampleCount || sampleCount > kDSPetAudioDeviceBlockSamples) {
         return ESP_ERR_INVALID_ARG;
     }
-    size_t receivedBytes = 0;
-    const size_t sizeBytes = sampleCount * sizeof(sRxSlots[0]);
+    size_t       receivedBytes = 0;
+    const size_t sizeBytes     = sampleCount * sizeof(sRxSlots[0]);
     ESP_RETURN_ON_ERROR(i2s_channel_read(sRx, sRxSlots, sizeBytes, &receivedBytes, timeoutMs), kTag, "read PCM");
     if (receivedBytes != sizeBytes) {
         return ESP_ERR_INVALID_SIZE;
     }
     for (size_t i = 0; i < sampleCount; ++i) {
         // INMP441 的 L/R 接地。取左槽中 24 位有效数据的高 16 位。
-        samples[i] = (int16_t)(sRxSlots[i][0] >> 16);
+        samples[i] = (int16_t) (sRxSlots[i][0] >> 16);
     }
     return ESP_OK;
 }
 
-esp_err_t DSPetAudioDeviceWrite(const int16_t *samples, size_t sampleCount, uint32_t timeoutMs)
-{
+esp_err_t DSPetAudioDeviceWrite(const int16_t *samples, size_t sampleCount, uint32_t timeoutMs) {
     if (!sTxActive) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -207,16 +198,15 @@ esp_err_t DSPetAudioDeviceWrite(const int16_t *samples, size_t sampleCount, uint
     }
     for (size_t i = 0; i < sampleCount; ++i) {
         // 左右槽送相同数据，兼容功放的通道选择。
-        sTxSlots[i][0] = sTxSlots[i][1] = (int32_t)samples[i] * 65536;
+        sTxSlots[i][0] = sTxSlots[i][1] = (int32_t) samples[i] * 65536;
     }
-    size_t writtenBytes = 0;
-    const size_t sizeBytes = sampleCount * sizeof(sTxSlots[0]);
+    size_t       writtenBytes = 0;
+    const size_t sizeBytes    = sampleCount * sizeof(sTxSlots[0]);
     ESP_RETURN_ON_ERROR(i2s_channel_write(sTx, sTxSlots, sizeBytes, &writtenBytes, timeoutMs), kTag, "write PCM");
     return writtenBytes == sizeBytes ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
-esp_err_t DSPetAudioDeviceDrain(uint32_t timeoutMs)
-{
+esp_err_t DSPetAudioDeviceDrain(uint32_t timeoutMs) {
     if (!sTxActive) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -226,9 +216,9 @@ esp_err_t DSPetAudioDeviceDrain(uint32_t timeoutMs)
     }
     // 从最后一次写入后数完整一轮 DMA，再多等一块让发送 FIFO 中的尾音通过。
     const uint32_t startBlock = txCompletedBlocks();
-    TimeOut_t timeout;
+    TimeOut_t      timeout;
     vTaskSetTimeOutState(&timeout);
-    while ((uint32_t)(txCompletedBlocks() - startBlock) < kDmaBlocks + 1) {
+    while ((uint32_t) (txCompletedBlocks() - startBlock) < kDmaBlocks + 1) {
         if (xTaskCheckForTimeOut(&timeout, &remaining) == pdTRUE) {
             return ESP_ERR_TIMEOUT;
         }
@@ -237,8 +227,7 @@ esp_err_t DSPetAudioDeviceDrain(uint32_t timeoutMs)
     return ESP_OK;
 }
 
-esp_err_t DSPetAudioDeviceStartTap(void)
-{
+esp_err_t DSPetAudioDeviceStartTap(void) {
     if (!sTxActive || sRxActive) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -266,7 +255,6 @@ esp_err_t DSPetAudioDeviceStartTap(void)
     return error;
 }
 
-bool DSPetAudioDeviceTakeTap(DSPetAudioTapBlock *block, uint32_t timeoutMs)
-{
+bool DSPetAudioDeviceTakeTap(DSPetAudioTapBlock *block, uint32_t timeoutMs) {
     return block && sTapQueue && xQueueReceive(sTapQueue, block, pdMS_TO_TICKS(timeoutMs)) == pdTRUE;
 }

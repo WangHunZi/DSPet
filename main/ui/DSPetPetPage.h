@@ -2,6 +2,7 @@
 #define DSPET_PET_PAGE_H
 
 #include <stdint.h>
+
 #include "DSPetClip.h"
 #include "esp_err.h"
 

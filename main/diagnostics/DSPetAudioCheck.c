@@ -1,40 +1,41 @@
 #include "DSPetAudioCheck.h"
+
+#include <math.h>
+#include <stdlib.h>
+
 #include "DSPetAudioDevice.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include <math.h>
-#include <stdlib.h>
 
 enum {
-    kIoTimeoutMs = 250,
-    kToneMs = 280,
-    kTonePeak = 768,
+    kIoTimeoutMs   = 250,
+    kToneMs        = 280,
+    kTonePeak      = 768,
     kRecordSeconds = 3,
     kRecordSamples = kDSPetAudioDeviceSampleRateHz * kRecordSeconds,
-    kReplayPeak = 2048,
-    kGainScale = 256,
+    kReplayPeak    = 2048,
+    kGainScale     = 256,
 };
 
 static const char *const kTag = "audio_check";
 
-static esp_err_t playTone(unsigned hz)
-{
-    const unsigned samples = kDSPetAudioDeviceSampleRateHz * kToneMs / 1000;
-    const unsigned fade = kDSPetAudioDeviceSampleRateHz / 100;
-    const float phaseStep = 6.28318530718f * hz / kDSPetAudioDeviceSampleRateHz;
-    int16_t chunk[kDSPetAudioDeviceBlockSamples];
+static esp_err_t playTone(unsigned hz) {
+    const unsigned samples   = kDSPetAudioDeviceSampleRateHz * kToneMs / 1000;
+    const unsigned fade      = kDSPetAudioDeviceSampleRateHz / 100;
+    const float    phaseStep = 6.28318530718f * hz / kDSPetAudioDeviceSampleRateHz;
+    int16_t        chunk[kDSPetAudioDeviceBlockSamples];
     for (unsigned offset = 0; offset < samples;) {
         unsigned count = samples - offset;
         if (count > kDSPetAudioDeviceBlockSamples) {
             count = kDSPetAudioDeviceBlockSamples;
         }
         for (unsigned i = 0; i < count; ++i) {
-            unsigned n = offset + i;
-            unsigned edge = n < samples - 1 - n ? n : samples - 1 - n;
-            float envelope = edge < fade ? (float)edge / fade : 1.0f;
-            chunk[i] = (int16_t)(kTonePeak * envelope * sinf(phaseStep * n));
+            unsigned n        = offset + i;
+            unsigned edge     = n < samples - 1 - n ? n : samples - 1 - n;
+            float    envelope = edge < fade ? (float) edge / fade : 1.0f;
+            chunk[i]          = (int16_t) (kTonePeak * envelope * sinf(phaseStep * n));
         }
         ESP_RETURN_ON_ERROR(DSPetAudioDeviceWrite(chunk, count, kIoTimeoutMs), kTag, "play tone");
         offset += count;
@@ -42,8 +43,7 @@ static esp_err_t playTone(unsigned hz)
     return DSPetAudioDeviceDrain(kIoTimeoutMs);
 }
 
-static esp_err_t capture(int16_t *pcm, size_t sampleCount)
-{
+static esp_err_t capture(int16_t *pcm, size_t sampleCount) {
     ESP_RETURN_ON_ERROR(DSPetAudioDeviceStartCapture(), kTag, "enable microphone RX");
     esp_err_t result = ESP_OK;
     for (size_t offset = 0; offset < sampleCount;) {
@@ -61,23 +61,26 @@ static esp_err_t capture(int16_t *pcm, size_t sampleCount)
     return result == ESP_OK ? stop : result;
 }
 
-static esp_err_t replayCapture(const int16_t *pcm, size_t samples)
-{
+static esp_err_t replayCapture(const int16_t *pcm, size_t samples) {
     int64_t sum = 0;
     for (size_t i = 0; i < samples; ++i) sum += pcm[i];
-    const int32_t dc = (int32_t)(sum / (int64_t)samples);
-    int32_t peak = 0;
-    int64_t energy = 0;
+    const int32_t dc     = (int32_t) (sum / (int64_t) samples);
+    int32_t       peak   = 0;
+    int64_t       energy = 0;
     for (size_t i = 0; i < samples; ++i) {
-        int32_t sample = pcm[i] - dc;
+        int32_t sample    = pcm[i] - dc;
         int32_t magnitude = abs(sample);
         if (magnitude > peak) {
             peak = magnitude;
         }
-        energy += (int64_t)sample * sample;
+        energy += (int64_t) sample * sample;
     }
-    ESP_LOGI(kTag, "Mic captured %u samples, DC=%ld AC peak=%ld RMS=%.1f (PCM16)",
-             (unsigned)samples, (long)dc, (long)peak, sqrt((double)energy / samples));
+    ESP_LOGI(kTag,
+             "Mic captured %u samples, DC=%ld AC peak=%ld RMS=%.1f (PCM16)",
+             (unsigned) samples,
+             (long) dc,
+             (long) peak,
+             sqrt((double) energy / samples));
     if (peak == 0) {
         ESP_LOGW(kTag, "No variation in left slot; check microphone power, SD and L/R");
         return ESP_ERR_INVALID_RESPONSE;
@@ -96,7 +99,7 @@ static esp_err_t replayCapture(const int16_t *pcm, size_t samples)
             count = kDSPetAudioDeviceBlockSamples;
         }
         for (size_t i = 0; i < count; ++i) {
-            chunk[i] = (int16_t)((pcm[offset + i] - dc) * gain / kGainScale);
+            chunk[i] = (int16_t) ((pcm[offset + i] - dc) * gain / kGainScale);
         }
         ESP_RETURN_ON_ERROR(DSPetAudioDeviceWrite(chunk, count, kIoTimeoutMs), kTag, "play captured audio");
         offset += count;
@@ -104,11 +107,9 @@ static esp_err_t replayCapture(const int16_t *pcm, size_t samples)
     return DSPetAudioDeviceDrain(kIoTimeoutMs);
 }
 
-static esp_err_t checkMicrophone(void)
-{
-    int16_t *pcm = heap_caps_malloc_prefer(kRecordSamples * sizeof(*pcm), 2,
-                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
-                                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+static esp_err_t checkMicrophone(void) {
+    int16_t *pcm = heap_caps_malloc_prefer(
+        kRecordSamples * sizeof(*pcm), 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!pcm) {
         return ESP_ERR_NO_MEM;
     }
@@ -124,8 +125,7 @@ static esp_err_t checkMicrophone(void)
     return result;
 }
 
-esp_err_t DSPetAudioCheckRun(void)
-{
+esp_err_t DSPetAudioCheckRun(void) {
     esp_err_t result = DSPetAudioDeviceOpen();
     if (result == ESP_OK) {
         vTaskDelay(pdMS_TO_TICKS(350));

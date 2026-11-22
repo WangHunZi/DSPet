@@ -1,9 +1,9 @@
-#include "DSPetActionState.h"
 #include <assert.h>
 #include <stdint.h>
 
-int main(void)
-{
+#include "DSPetActionState.h"
+
+int main(void) {
     DSPetActionState state = {0};
     assert(!DSPetActionStateUpdate(&state, 6, 0, 999, 1000, true));
     assert(DSPetActionStateUpdate(&state, 6, 0, 1000, 1000, true));

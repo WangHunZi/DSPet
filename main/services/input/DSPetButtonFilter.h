@@ -6,10 +6,10 @@
 
 /** @brief 由调用方持有的按键消抖状态。 */
 typedef struct {
-    bool rawPressed; /**< 最近一次原始输入。 */
-    bool stablePressed; /**< 消抖后的电平状态。 */
-    bool armed; /**< 稳定松开后允许计一次按下。 */
-    uint32_t changedAtMs; /**< 最近一次电平变化时间，单位毫秒。 */
+    bool     rawPressed;    /**< 最近一次原始输入。 */
+    bool     stablePressed; /**< 消抖后的电平状态。 */
+    bool     armed;         /**< 稳定松开后允许计一次按下。 */
+    uint32_t changedAtMs;   /**< 最近一次电平变化时间，单位毫秒。 */
 } DSPetButtonFilter;
 
 /**

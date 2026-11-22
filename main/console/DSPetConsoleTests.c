@@ -1,10 +1,5 @@
 #include "DSPetConsoleTests.h"
-#include "DSPetDuplexTest.h"
-#include "DSPetLoopbackTest.h"
-#include "DSPetPlayback.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
-#include "freertos/task.h"
+
 #include <errno.h>
 #include <inttypes.h>
 #include <stdatomic.h>
@@ -12,6 +7,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "DSPetDuplexTest.h"
+#include "DSPetLoopbackTest.h"
+#include "DSPetPlayback.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
 
 typedef enum {
     kTestRunning,
@@ -22,40 +24,40 @@ typedef enum {
 
 typedef struct {
     uint32_t id;
-    bool human;
+    bool     human;
 } TestRun;
 
 static QueueHandle_t sRequests;
-static atomic_int sState = kTestPass;
+static atomic_int    sState = kTestPass;
 // 仅串口任务写入。测试任务从队列拿本轮副本。
 static TestRun sCurrent;
 
-static const char *stateName(TestState state)
-{
+static const char *stateName(TestState state) {
     switch (state) {
-    case kTestRunning: return "running";
-    case kTestWaiting: return "waiting_human";
-    case kTestPass: return "pass";
-    case kTestFail: return "fail";
+        case kTestRunning: return "running";
+        case kTestWaiting: return "waiting_human";
+        case kTestPass:    return "pass";
+        case kTestFail:    return "fail";
     }
     return "unknown";
 }
 
-static void printStatus(TestRun run, TestState state, esp_err_t error)
-{
-    printf("DSPET_TEST id=%" PRIu32 " case=%s state=%s error=%s\n", run.id,
-           run.human ? "audio_loopback" : "audio_duplex", stateName(state), esp_err_to_name(error));
+static void printStatus(TestRun run, TestState state, esp_err_t error) {
+    printf("DSPET_TEST id=%" PRIu32 " case=%s state=%s error=%s\n",
+           run.id,
+           run.human ? "audio_loopback" : "audio_duplex",
+           stateName(state),
+           esp_err_to_name(error));
 }
 
-static void testTask(void *context)
-{
+static void testTask(void *context) {
     for (;;) {
         TestRun run;
         if (xQueueReceive(sRequests, &run, portMAX_DELAY) != pdTRUE) {
             continue;
         }
         esp_err_t result = run.human ? DSPetLoopbackTestRun() : DSPetDuplexTestRun();
-        TestState state = result == ESP_OK ? (run.human ? kTestWaiting : kTestPass) : kTestFail;
+        TestState state  = result == ESP_OK ? (run.human ? kTestWaiting : kTestPass) : kTestFail;
         atomic_store(&sState, state);
         if (state == kTestWaiting) {
             printf("如果听清自己的声音，输入 dspet test confirm %" PRIu32 " pass，否则用 fail。\n", run.id);
@@ -64,8 +66,7 @@ static void testTask(void *context)
     }
 }
 
-esp_err_t DSPetConsoleTestsInit(void)
-{
+esp_err_t DSPetConsoleTestsInit(void) {
     sRequests = xQueueCreate(1, sizeof(TestRun));
     if (!sRequests) {
         return ESP_ERR_NO_MEM;
@@ -85,16 +86,14 @@ esp_err_t DSPetConsoleTestsInit(void)
     return error;
 }
 
-void DSPetConsoleTestsHelp(void)
-{
+void DSPetConsoleTestsHelp(void) {
     puts("dspet test hardware audio duplex");
     puts("dspet test human audio loopback");
     puts("dspet test status");
     puts("dspet test confirm <run-id> pass|fail");
 }
 
-static int startTest(bool human)
-{
+static int startTest(bool human) {
     TestState state = atomic_load(&sState);
     if (!sRequests || state == kTestRunning || state == kTestWaiting) {
         puts("DSPET_ERROR test_runner_busy_or_unavailable");
@@ -111,12 +110,11 @@ static int startTest(bool human)
     return 0;
 }
 
-static int confirm(const char *idArg, const char *verdict)
-{
+static int confirm(const char *idArg, const char *verdict) {
     char *end;
-    errno = 0;
-    uintmax_t id = strtoumax(idArg, &end, 10);
-    bool pass = strcmp(verdict, "pass") == 0;
+    errno          = 0;
+    uintmax_t id   = strtoumax(idArg, &end, 10);
+    bool      pass = strcmp(verdict, "pass") == 0;
     if (errno || end == idArg || *end || idArg[0] < '0' || idArg[0] > '9' || id > UINT32_MAX ||
         (!pass && strcmp(verdict, "fail") != 0)) {
         puts("DSPET_ERROR invalid_confirmation");
@@ -132,8 +130,7 @@ static int confirm(const char *idArg, const char *verdict)
     return 0;
 }
 
-int DSPetConsoleTestsRunCommand(int argc, char **argv)
-{
+int DSPetConsoleTestsRunCommand(int argc, char **argv) {
     if (argc == 3 && strcmp(argv[1], "audio") == 0) {
         if (strcmp(argv[0], "hardware") == 0 && strcmp(argv[2], "duplex") == 0) {
             return startTest(false);
@@ -149,8 +146,7 @@ int DSPetConsoleTestsRunCommand(int argc, char **argv)
         if (!sCurrent.id) {
             puts("DSPET_TEST state=idle");
         } else {
-            printf("DSPET_TEST_STATUS id=%" PRIu32 " state=%s\n", sCurrent.id,
-                   stateName(atomic_load(&sState)));
+            printf("DSPET_TEST_STATUS id=%" PRIu32 " state=%s\n", sCurrent.id, stateName(atomic_load(&sState)));
         }
         return 0;
     }

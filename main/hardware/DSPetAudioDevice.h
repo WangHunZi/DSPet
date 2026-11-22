@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
 #include "esp_err.h"
 
 enum {
@@ -13,16 +14,16 @@ enum {
 
 /** @brief 观测块来自哪一条 I²S DMA 通道。 */
 typedef enum {
-    kDSPetAudioTapMic, /**< 麦克风左槽。 */
+    kDSPetAudioTapMic,      /**< 麦克风左槽。 */
     kDSPetAudioTapPlayback, /**< 发送缓冲在驱动清零前的左槽。 */
 } DSPetAudioTapSource;
 
 /** @brief 一份独立的 16 kHz 单声道 PCM16 观测块。 */
 typedef struct {
-    DSPetAudioTapSource source; /**< 来源通道。 */
-    uint32_t blockIndex; /**< 通道内顺序编号。首样本位置为编号乘以块大小，允许回绕。 */
-    int64_t dmaEofUs; /**< 完成中断的单调时钟，单位微秒。 */
-    int16_t samples[kDSPetAudioDeviceBlockSamples]; /**< 连续的 128 个样本。 */
+    DSPetAudioTapSource source;     /**< 来源通道。 */
+    uint32_t            blockIndex; /**< 通道内顺序编号。首样本位置为编号乘以块大小，允许回绕。 */
+    int64_t             dmaEofUs;   /**< 完成中断的单调时钟，单位微秒。 */
+    int16_t             samples[kDSPetAudioDeviceBlockSamples]; /**< 连续的 128 个样本。 */
 } DSPetAudioTapBlock;
 
 /**

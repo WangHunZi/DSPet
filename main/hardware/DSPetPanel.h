@@ -3,11 +3,12 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
 #include "esp_err.h"
 
 enum {
-    kDSPetPanelWidthPx = 240,
-    kDSPetPanelHeightPx = 240,
+    kDSPetPanelWidthPx    = 240,
+    kDSPetPanelHeightPx   = 240,
     kDSPetPanelFrameBytes = kDSPetPanelWidthPx * kDSPetPanelHeightPx * 2,
 };
 

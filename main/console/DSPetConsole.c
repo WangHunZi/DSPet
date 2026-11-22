@@ -1,4 +1,5 @@
 #include "DSPetConsole.h"
+
 #include "esp_app_desc.h"
 #include "esp_check.h"
 #include "esp_console.h"
@@ -11,8 +12,7 @@
 
 static const char *const kTag = "console";
 
-static void printHelp(void)
-{
+static void printHelp(void) {
     puts("dspet help");
     puts("dspet info");
 #ifdef CONFIG_DSPET_CONSOLE_TESTS
@@ -20,8 +20,7 @@ static void printHelp(void)
 #endif
 }
 
-static int handleCommand(int argc, char **argv)
-{
+static int handleCommand(int argc, char **argv) {
     if (argc == 1 || (argc == 2 && strcmp(argv[1], "help") == 0)) {
         printHelp();
         return 0;
@@ -40,18 +39,17 @@ static int handleCommand(int argc, char **argv)
     return 1;
 }
 
-esp_err_t DSPetConsoleStart(void)
-{
-    esp_console_repl_config_t replConfig = ESP_CONSOLE_REPL_CONFIG_DEFAULT();
-    replConfig.prompt = "xiao>";
+esp_err_t DSPetConsoleStart(void) {
+    esp_console_repl_config_t replConfig               = ESP_CONSOLE_REPL_CONFIG_DEFAULT();
+    replConfig.prompt                                  = "xiao>";
     esp_console_dev_usb_serial_jtag_config_t usbConfig = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
-    esp_console_repl_t *repl = NULL;
-    ESP_RETURN_ON_ERROR(esp_console_new_repl_usb_serial_jtag(&usbConfig, &replConfig, &repl),
-                        kTag, "create serial REPL");
+    esp_console_repl_t                      *repl      = NULL;
+    ESP_RETURN_ON_ERROR(
+        esp_console_new_repl_usb_serial_jtag(&usbConfig, &replConfig, &repl), kTag, "create serial REPL");
     const esp_console_cmd_t command = {
         .command = "dspet",
-        .help = "DSPet device commands",
-        .func = handleCommand,
+        .help    = "DSPet device commands",
+        .func    = handleCommand,
     };
     esp_err_t error = esp_console_cmd_register(&command);
 #ifdef CONFIG_DSPET_CONSOLE_TESTS

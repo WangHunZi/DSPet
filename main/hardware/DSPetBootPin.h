@@ -2,6 +2,7 @@
 #define DSPET_BOOT_PIN_H
 
 #include <stdbool.h>
+
 #include "esp_err.h"
 
 /**

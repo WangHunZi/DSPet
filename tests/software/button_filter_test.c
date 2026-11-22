@@ -1,9 +1,9 @@
-#include "DSPetButtonFilter.h"
 #include <assert.h>
 #include <stdint.h>
 
-int main(void)
-{
+#include "DSPetButtonFilter.h"
+
+int main(void) {
     DSPetButtonFilter f;
     DSPetButtonFilterInit(&f, false, 0);
     // Contact bounce must produce exactly one press after 30 ms stable.
