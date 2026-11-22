@@ -260,4 +260,4 @@ python3 tests/human/verify_direct_conversation_human.py --port /dev/cu.usbmodem1
 
 `--exercise-cancel` 在自动播报中再次提交板载 PCM，验证旧流关闭、DMA 排空和新回合的识别。真人用例先说「你好小智」，接着请桌宠讲个故事。听到开始播报后等两三秒，再直接说「等一下，一加一等于几」。听桌宠回答后保持安静。串口记录 ASR 文本、首块播放、插话前后的回合编号和旧音频排空。
 
-录音和回声参考保持 16 kHz。ASR 上传副本转成 8 kHz，TTS 音频分块转换成 16 kHz。网络任务和播放任务通过有界 PCM 缓冲交接，缓冲耗尽时先补一段再续播。关闭直连用 `dspet voice disable`，再用 `dspet voice enable` 回到本地唤醒模式。重启后临时凭据需重新配置。
+录音和回声参考保持 16 kHz。ASR 上传副本转成 8 kHz，TTS 音频分块转换成 16 kHz。网络任务和播放任务通过 PSRAM 中的环形缓冲交接。接收跟得上时积累约两秒音频再开播，接收不足时等待整段完成或缓冲接近上限。发生断粮时也等待这个条件，再续播剩余音频。关闭直连用 `dspet voice disable`，再用 `dspet voice enable` 回到本地唤醒模式。重启后临时凭据需重新配置。
