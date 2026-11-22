@@ -58,6 +58,14 @@ menu "DSPet audio"
         help
             Run the speech demo sequence once after boot. A BOOT press
             cancels the automatic sequence and toggles playback manually.
+
+    config DSPET_LOCAL_VOICE
+        bool "Enable offline voice sessions and the Ni Hao Xiao Zhi wake word"
+        depends on DSPET_AEC && !DSPET_AUDIO_CHECK && !DSPET_PLAYBACK_DEMO
+        default n
+        help
+            Select wn9_nihaoxiaozhi_tts in ESP Speech Recognition and
+            flash the whole project, including the model partition.
 endmenu
 
 menu "DSPet playback"
