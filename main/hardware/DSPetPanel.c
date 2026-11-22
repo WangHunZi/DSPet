@@ -18,8 +18,16 @@
 // 使用芯片 GPIO 编号。D9 作片选，屏幕只写。
 enum { kPinBacklight = 6, kPinReset = 5, kPinDc = 4, kPinMosi = 9, kPinClock = 7, kPinCs = 8 };
 
+#ifdef CONFIG_DSPET_DIRECT_TEST
+enum { kDmaRows = 30 };
+#else
+enum { kDmaRows = kDSPetPanelHeightPx };
+#endif
+enum { kDmaBytes = kDSPetPanelWidthPx * 2 * kDmaRows };
+_Static_assert(kDSPetPanelHeightPx % kDmaRows == 0, "DMA bands must cover the entire panel");
+
 static esp_lcd_panel_handle_t sPanel;
-static uint8_t               *sDmaFrame;
+static uint8_t               *sDmaBand;
 static SemaphoreHandle_t      sTransferDone;
 static bool                   sTimedOut;
 static const char *const      kTag = "display";
@@ -30,8 +38,8 @@ static bool colorDone(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_data_
     return wakeTask == pdTRUE;
 }
 
-static esp_err_t sendFrame(void) {
-    esp_err_t err = esp_lcd_panel_draw_bitmap(sPanel, 0, 0, kDSPetPanelWidthPx, kDSPetPanelHeightPx, sDmaFrame);
+static esp_err_t sendBand(int y) {
+    esp_err_t err = esp_lcd_panel_draw_bitmap(sPanel, 0, y, kDSPetPanelWidthPx, y + kDmaRows, sDmaBand);
     if (err != ESP_OK) {
         return err;
     }
@@ -44,12 +52,14 @@ static esp_err_t sendFrame(void) {
 }
 
 void DSPetPanelFill(uint16_t rgb565) {
-    ESP_ERROR_CHECK(sPanel && sDmaFrame && !sTimedOut ? ESP_OK : ESP_ERR_INVALID_STATE);
-    for (size_t i = 0; i < kDSPetPanelFrameBytes; i += 2) {
-        sDmaFrame[i]     = rgb565 >> 8;
-        sDmaFrame[i + 1] = rgb565 & 0xFF;
+    ESP_ERROR_CHECK(sPanel && sDmaBand && !sTimedOut ? ESP_OK : ESP_ERR_INVALID_STATE);
+    for (size_t i = 0; i < kDmaBytes; i += 2) {
+        sDmaBand[i]     = rgb565 >> 8;
+        sDmaBand[i + 1] = rgb565 & 0xFF;
     }
-    ESP_ERROR_CHECK(sendFrame());
+    for (int y = 0; y < kDSPetPanelHeightPx; y += kDmaRows) {
+        ESP_ERROR_CHECK(sendBand(y));
+    }
 }
 
 esp_err_t DSPetPanelPresent(const uint8_t *pixels, size_t sizeBytes) {
@@ -59,8 +69,14 @@ esp_err_t DSPetPanelPresent(const uint8_t *pixels, size_t sizeBytes) {
     if (!pixels || sizeBytes != kDSPetPanelFrameBytes) {
         return ESP_ERR_INVALID_ARG;
     }
-    memcpy(sDmaFrame, pixels, sizeBytes);
-    return sendFrame();
+    for (int y = 0; y < kDSPetPanelHeightPx; y += kDmaRows, pixels += kDmaBytes) {
+        memcpy(sDmaBand, pixels, kDmaBytes);
+        esp_err_t error = sendBand(y);
+        if (error != ESP_OK) {
+            return error;
+        }
+    }
+    return ESP_OK;
 }
 
 void DSPetPanelInit(void) {
@@ -76,9 +92,10 @@ void DSPetPanelInit(void) {
     };
     ESP_ERROR_CHECK(gpio_config(&backlight));
     ESP_ERROR_CHECK(gpio_set_level(kPinBacklight, 0));
-    sDmaFrame     = heap_caps_malloc(kDSPetPanelFrameBytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    // 直连测试将内部 DMA 内存留给 SPI 和 I²S，把整帧发送拆为若干条。
+    sDmaBand      = heap_caps_malloc(kDmaBytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     sTransferDone = xSemaphoreCreateBinary();
-    assert(sDmaFrame && sTransferDone);
+    assert(sDmaBand && sTransferDone);
 
     spi_bus_config_t bus = {
         .mosi_io_num     = kPinMosi,
@@ -86,7 +103,7 @@ void DSPetPanelInit(void) {
         .sclk_io_num     = kPinClock,
         .quadwp_io_num   = -1,
         .quadhd_io_num   = -1,
-        .max_transfer_sz = kDSPetPanelFrameBytes,
+        .max_transfer_sz = kDmaBytes,
     };
     ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO));
     esp_lcd_panel_io_handle_t     io;
